@@ -1,0 +1,10 @@
+node_modules/
+out/
+dist/
+.vite/
+*.log
+.DS_Store
+
+# Сборочные кэши и случайные файлы
+*.tsbuildinfo
+pdfpage.png

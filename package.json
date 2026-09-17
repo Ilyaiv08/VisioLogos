@@ -1,0 +1,148 @@
+{
+  "name": "visiologos",
+  "version": "0.4.1",
+  "description": "Программа для вывода текстов, песен и презентаций на проектор во время церковных служений",
+  "main": "./out/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "dist": "npm run build && electron-builder --win",
+    "check": "esbuild tools/selfcheck.ts --bundle --platform=node --format=esm --alias:@shared=./src/shared --external:electron --outfile=node_modules/.cache/visiologos-selfcheck.mjs && node node_modules/.cache/visiologos-selfcheck.mjs",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/literata": "^5.3.0",
+    "@fontsource-variable/onest": "^5.3.0",
+    "@fontsource/pt-serif": "^5.3.0",
+    "fflate": "^0.8.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vosk-browser": "^0.0.8",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "build": {
+    "appId": "org.visiologos.app",
+    "productName": "VisioLogos",
+    "copyright": "VisioLogos",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "modules",
+        "to": "modules"
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "publish": null,
+    "artifactName": "VisioLogos-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico",
+      "artifactName": "VisioLogos-${version}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VisioLogos",
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico",
+      "language": "1049",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "VisioLogos-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png",
+      "category": "public.app-category.productivity",
+      "darkModeSupport": true,
+      "identity": null,
+      "artifactName": "VisioLogos-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "VisioLogos ${version}",
+      "artifactName": "VisioLogos-${version}-${arch}.${ext}",
+      "contents": [
+        {
+          "x": 140,
+          "y": 200,
+          "type": "file"
+        },
+        {
+          "x": 400,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "resources/icon.png",
+      "category": "Office"
+    }
+  }
+}
