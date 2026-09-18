@@ -41,7 +41,7 @@ export async function deckToSong(deckId: string): Promise<DeckToSong> {
   const named = numberFromName(parsed.song.title.trim() || deck.name)
   const title = named.title || deck.name
 
-  const kept = await backgroundOf(old?.media ?? buf, title)
+  const kept = await backgroundOf(old?.media ?? buf, title, path)
   const song: Song = {
     ...parsed.song,
     id: `song-${Date.now()}`,

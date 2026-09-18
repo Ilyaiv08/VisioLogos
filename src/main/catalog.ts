@@ -270,7 +270,7 @@ async function ingest(paths: string[], tabId: string): Promise<CatalogImport> {
         continue
       }
 
-      const kept = await backgroundOf(media, title)
+      const kept = await backgroundOf(media, title, path)
       backgrounds.added += kept.added
       backgrounds.existed += kept.existed
 

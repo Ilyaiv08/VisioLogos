@@ -11,6 +11,7 @@ import {
 import type { SongFormat } from '@shared/songFormats'
 import { splitBySentences } from '@shared/text'
 import { readableStyleOn } from '@shared/backgrounds'
+import { brightnessOf } from '../lib/backLight'
 import { t } from '@shared/i18n'
 import { domFitTest } from '../lib/fitTest'
 import { useScreen } from './screen'
@@ -357,7 +358,7 @@ export const useSongs = create<SongsStore>((set, get) => ({
     const background = draft.background ?? look.background
 
     const style = draft.background
-      ? readableStyleOn(look.style, draft.background)
+      ? readableStyleOn(look.style, draft.background, measureLight(draft.background))
       : look.style
 
     const slides = buildSongSlides(draft, style, background)
@@ -443,6 +444,24 @@ function rememberImport(ids: string[]): void {
 
 const firstLine = (song: Song): string =>
   song.parts[0]?.text.split('\n')[0]?.trim().slice(0, 60) ?? ''
+
+const lightOfBackground = new Map<string, number | null>()
+
+function measureLight(background: Song['background']): number | null {
+  if (!background || (background.kind !== 'image' && background.kind !== 'video')) return null
+
+  const src = background.src
+  if (lightOfBackground.has(src)) return lightOfBackground.get(src) ?? null
+
+  lightOfBackground.set(src, null)
+  void brightnessOf(background).then((light) => {
+    if (light === null) return
+    lightOfBackground.set(src, light)
+    useSongs.getState().rebuild()
+  })
+
+  return null
+}
 
 function buildSongSlides(
   song: Song,

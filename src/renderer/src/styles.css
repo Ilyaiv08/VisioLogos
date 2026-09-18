@@ -3958,3 +3958,34 @@ button.wide.is-danger {
 .screenpick__item.is-active .screenpick__where {
   color: var(--text-2);
 }
+
+.fading {
+  animation: notice-in 180ms var(--ease) both;
+}
+
+.fading.is-leaving {
+  animation: notice-out 280ms var(--ease) forwards;
+  pointer-events: none;
+}
+
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes notice-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}

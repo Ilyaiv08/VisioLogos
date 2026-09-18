@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ServiceItem } from '@shared/types'
 import { dropIndex, itemKindLabel } from '@shared/service'
 import { pathOf } from '@shared/tree'
@@ -8,6 +8,7 @@ import { FolderTree, type TreeItem } from '../components/FolderTree'
 import { SlideView } from '../components/SlideView'
 import { Splitter } from '../components/Splitter'
 import { droppedPaths, hasFiles } from '../lib/dropFiles'
+import { NOTICE_TROUBLE_MS, useAutoHide } from '../lib/fading'
 import { deckSlideUrl } from '@shared/decks'
 import { useDecks } from '../state/decks'
 import { useT, useTn } from '../state/i18n'
@@ -38,6 +39,8 @@ export function HomeTab(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
 
   const [trouble, setTrouble] = useState<string | null>(null)
+  const hideTrouble = useCallback(() => setTrouble(null), [])
+  const leavingTrouble = useAutoHide(trouble, hideTrouble, NOTICE_TROUBLE_MS)
   const [report, setReport] = useState<DropReport | null>(null)
 
   const [dropping, setDropping] = useState(false)
@@ -338,7 +341,10 @@ export function HomeTab(): React.JSX.Element {
                 {dropping && <p className="note">{t('home.dropHere')}</p>}
                 {busy && <p className="note">{t('home.spreadingFiles')}</p>}
                 {trouble && (
-                  <p className="note note--warn" onClick={() => setTrouble(null)}>
+                  <p
+                    className={`note note--warn fading ${leavingTrouble ? 'is-leaving' : ''}`}
+                    onClick={hideTrouble}
+                  >
                     {trouble}
                   </p>
                 )}

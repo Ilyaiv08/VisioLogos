@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import type { SongPart, SongPartKind } from '@shared/types'
 import { PART_KINDS, movedBefore, orderLabel, partLabel, partTitle, songOrder } from '@shared/songs'
 import type { ControlTarget } from '../components/ControlPanel'
@@ -10,6 +10,7 @@ import { GrowingText } from '../components/GrowingText'
 import { SlideView } from '../components/SlideView'
 import { Splitter } from '../components/Splitter'
 import { droppedPaths, hasFiles } from '../lib/dropFiles'
+import { NOTICE_MS, NOTICE_TROUBLE_MS, useAutoHide } from '../lib/fading'
 import { useT } from '../state/i18n'
 import { useShot } from '../state/screen'
 import { useLive } from '../state/live'
@@ -100,6 +101,12 @@ export function SongsTab(): React.JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   const topRef = useRef<HTMLDivElement>(null)
   const [report, setReport] = useState<ImportReport | null>(null)
+  const hideReport = useCallback(() => setReport(null), [])
+  const leavingReport = useAutoHide(
+    report,
+    hideReport,
+    report && report.skipped.length > 0 ? NOTICE_TROUBLE_MS : NOTICE_MS
+  )
 
   const runImport = async (): Promise<void> => {
     const result = await s.importFiles()
@@ -262,7 +269,7 @@ export function SongsTab(): React.JSX.Element {
             }}
           >
             {report && (
-              <ImportReportView report={report} onClose={() => setReport(null)} />
+              <ImportReportView report={report} onClose={hideReport} leaving={leavingReport} />
             )}
             <input
               className="search"
@@ -623,10 +630,12 @@ function exportMenu(
 
 function ImportReportView({
   report,
-  onClose
+  onClose,
+  leaving
 }: {
   report: ImportReport
   onClose: () => void
+  leaving: boolean
 }): React.JSX.Element {
   const t = useT()
 
@@ -637,7 +646,7 @@ function ImportReportView({
   const backgrounds = backgroundNotice(report.backgrounds)
 
   return (
-    <div className="report">
+    <div className={`report fading ${leaving ? 'is-leaving' : ''}`}>
       <div className="report__row">
         <b>
           {report.added > 0 ? t('songs.imported', { n: report.added }) : t('songs.importedNothing')}

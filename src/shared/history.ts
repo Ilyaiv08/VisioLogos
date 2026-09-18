@@ -10,6 +10,20 @@ export interface Release {
 
 export const HISTORY: Release[] = [
   {
+    version: '0.4.2',
+    date: '2026-09-18',
+    ru: [
+      'Фон из PowerPoint переносится точно: рисует его сам PowerPoint, поэтому остаются волны, градиенты и цвета темы, а не одна заливка.',
+      'Цвет текста подстраивается под такой фон: на светлой теме буквы становятся тёмными.',
+      'Уведомления гаснут сами: обычные через несколько секунд, сообщения об ошибке — дольше.'
+    ],
+    en: [
+      'The PowerPoint background comes across exactly: PowerPoint itself draws it, so the waves, gradients and theme colours stay instead of a single fill.',
+      'The text colour follows that background: on a light theme the letters turn dark.',
+      'Notices fade away by themselves: ordinary ones after a few seconds, error messages after longer.'
+    ]
+  },
+  {
     version: '0.4.1',
     date: '2026-09-17',
     ru: [

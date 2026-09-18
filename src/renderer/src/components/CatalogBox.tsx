@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { CatalogSong, CatalogTab } from '@shared/types'
 import { Modal } from './Modal'
 import { SEPARATOR, useContextMenu, type MenuEntry } from './ContextMenu'
 import { droppedPaths, hasFiles } from '../lib/dropFiles'
+import { NOTICE_MS, NOTICE_TROUBLE_MS, useAutoHide } from '../lib/fading'
 import { useCatalog } from '../state/catalog'
 import { useT } from '../state/i18n'
 
@@ -21,6 +22,13 @@ export function CatalogBox(): React.JSX.Element {
     void c.init()
 
   }, [])
+
+  const hideNotice = useCallback(() => useCatalog.getState().say(null), [])
+  const leavingNotice = useAutoHide(
+    c.notice,
+    hideNotice,
+    c.notice && c.notice.includes('\n') ? NOTICE_TROUBLE_MS : NOTICE_MS
+  )
 
   const searching = c.query.trim().length > 0
   const songs = c.visible()
@@ -251,7 +259,7 @@ export function CatalogBox(): React.JSX.Element {
         </div>
 
         {c.notice && (
-          <div className="cat__notice">
+          <div className={`cat__notice fading ${leavingNotice ? 'is-leaving' : ''}`}>
             <div className="cat__noticerow">
               <b>{c.notice.split('\n')[0]}</b>
               <button className="link" onClick={() => c.say(null)} title={t('common.hide')}>

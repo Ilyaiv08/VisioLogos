@@ -17,6 +17,7 @@ import { jsonFile } from './jsonFile'
 import { binOf, toTrash } from './bin'
 import { keepBackgroundFill, keepBackgroundImage, type KeptBackground } from './backgrounds'
 import { pptxBackgrounds } from './pptxMedia'
+import { renderPptxBackgrounds } from './pptxRender'
 import { importSongFile, type ImportResult } from './songImport'
 import { isOldOffice, readOldPresentation, reasonForPowerPoint } from './pptText'
 import { writeSongFile } from './songExport'
@@ -223,7 +224,7 @@ async function ingest(paths: string[], folderId: string | null): Promise<ImportR
       const title = named.title || name
       const number = parsed.song.number.trim() || named.number
 
-      const kept = await backgroundOf(media, title)
+      const kept = await backgroundOf(media, title, path)
       backgrounds.added += kept.added
       backgrounds.existed += kept.existed
 
@@ -263,8 +264,26 @@ export interface SongBackgrounds {
   existed: number
 }
 
-export async function backgroundOf(buf: Buffer, name: string): Promise<SongBackgrounds> {
+export async function backgroundOf(
+  buf: Buffer,
+  name: string,
+  path?: string
+): Promise<SongBackgrounds> {
   const out: SongBackgrounds = { main: null, added: 0, existed: 0 }
+
+  const drawn = path ? await renderPptxBackgrounds(path) : []
+  if (drawn.length > 0) {
+    for (const one of [...drawn].sort((a, b) => b.slides - a.slides)) {
+      try {
+        const kept = await keepBackgroundImage(name, one.data, one.ext)
+        out[kept.existed ? 'existed' : 'added']++
+        out.main ??= kept
+      } catch (error) {
+        console.error('[Песни] Не удалось сохранить отрисованный фон:', error)
+      }
+    }
+    if (out.main) return out
+  }
 
   for (const one of pptxBackgrounds(buf)) {
     try {

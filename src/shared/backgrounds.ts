@@ -168,11 +168,12 @@ export function flatLuminance(bg: BackgroundItem['background']): number | null {
 
 export function readableStyleOn<T extends { color: string }>(
   style: T,
-  background: BackgroundItem['background'] | null
+  background: BackgroundItem['background'] | null,
+  measured: number | null = null
 ): T {
   if (!background) return style
 
-  const back = flatLuminance(background)
+  const back = flatLuminance(background) ?? measured
   if (back === null || readableOn(style.color, back)) return style
 
   return { ...style, color: colorForLuminance(back) }

@@ -1,4 +1,4 @@
-import { app, dialog, net, protocol, BrowserWindow } from 'electron'
+import { app, dialog, nativeImage, net, protocol, BrowserWindow } from 'electron'
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -181,8 +181,7 @@ export async function keepBackgroundImage(
 ): Promise<KeptBackground> {
   await mkdir(dir(), { recursive: true })
 
-  const mark = createHash('sha1').update(data).digest('hex').slice(0, 8)
-  const tail = ` ${mark}${ext}`
+  const tail = ` ${imageMark(data)}${ext}`
 
   const already = (await readdir(dir()).catch(() => [] as string[])).find((file) =>
     file.toLowerCase().endsWith(tail)
@@ -193,6 +192,26 @@ export async function keepBackgroundImage(
   const file = `${safe}${tail}`
   await writeFile(join(dir(), file), data)
   return { background: imageBackground(file), existed: false }
+}
+
+const THUMB_W = 24
+const THUMB_H = 14
+
+function imageMark(data: Uint8Array): string {
+  try {
+    const small = nativeImage
+      .createFromBuffer(Buffer.from(data))
+      .resize({ width: THUMB_W, height: THUMB_H, quality: 'good' })
+      .toBitmap()
+
+    if (small.length > 0) {
+      return createHash('sha1').update(small).digest('hex').slice(0, 8)
+    }
+  } catch (error) {
+    console.error('[Фоны] Не удалось уменьшить картинку для сравнения:', error)
+  }
+
+  return createHash('sha1').update(data).digest('hex').slice(0, 8)
 }
 
 const imageBackground = (file: string): Background => ({
