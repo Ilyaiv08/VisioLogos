@@ -5,8 +5,7 @@ import { isLang, setLang } from '@shared/i18n'
 import { appIcon, savedChrome, TITLE_BAR_HEIGHT } from './system'
 import { flushSettings, readSettings } from './settings'
 import { flushTexts } from './texts'
-import { flushSongs } from './songs'
-import { flushCatalog } from './catalog'
+import { flushSongs, mergeOldCatalog } from './songs'
 import { releaseGlobalRemote, remoteLiveChanged, setGlobalRemote, watchGlobalRemote } from './remote'
 import { flushFolders } from './folders'
 import { flushTree } from './tree'
@@ -98,6 +97,11 @@ if (!app.requestSingleInstanceLock()) {
     setGlobalRemote(settings.presenterGlobal !== false)
 
     serveBackgrounds()
+
+    await mergeOldCatalog().catch((error) =>
+      console.error('[Песни] Не удалось перенести каталог в библиотеку:', error)
+    )
+
     registerIpc()
     notifyControlOnOutputChanges(() => controlWindow)
     watchGlobalRemote(() => controlWindow)
@@ -146,7 +150,6 @@ if (!app.requestSingleInstanceLock()) {
       flushSettings(),
       flushTexts(),
       flushSongs(),
-      flushCatalog(),
       flushFolders(),
       flushTree(),
       flushDecks()

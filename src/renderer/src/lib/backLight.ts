@@ -1,6 +1,5 @@
-import type { Background, SlideStyle } from '@shared/types'
+import type { Background } from '@shared/types'
 import { flatLuminance } from '@shared/backgrounds'
-import type { Patch } from '@shared/contrast'
 
 const GRID_W = 64
 const GRID_H = 36
@@ -14,11 +13,6 @@ interface Area {
 
 const WHOLE: Area = { x0: 0, y0: 0, x1: 1, y1: 1 }
 
-const safeArea = (paddingPct: number): Area => {
-  const pad = Math.min(0.4, Math.max(0, paddingPct / 100))
-  return { x0: pad, y0: pad, x1: 1 - pad, y1: 1 - pad }
-}
-
 export async function brightnessOf(bg: Background): Promise<number | null> {
   const flat = flatLuminance(bg)
   if (flat !== null) return flat
@@ -27,66 +21,6 @@ export async function brightnessOf(bg: Background): Promise<number | null> {
   if (!cells) return null
   return cells.reduce((sum, one) => sum + one, 0) / cells.length
 }
-
-export async function patchUnderText(
-  bg: Background,
-  style: SlideStyle
-): Promise<Patch | null> {
-  const flat = flatLuminance(bg)
-
-  if (flat !== null) return { mean: flat, darkest: flat, lightest: flat }
-
-  return patchOf(await cellsOf(bg, safeArea(style.paddingPct)))
-}
-
-export async function patchesUnderLines(
-  bg: Background,
-  style: SlideStyle,
-  lines: number
-): Promise<Patch[]> {
-  if (lines < 1) return []
-
-  const flat = flatLuminance(bg)
-
-  if (flat !== null) {
-    return Array.from({ length: lines }, () => ({
-      mean: flat,
-      darkest: flat,
-      lightest: flat
-    }))
-  }
-
-  const safe = safeArea(style.paddingPct)
-  const step = (safe.y1 - safe.y0) / lines
-
-  const out: Patch[] = []
-  for (let i = 0; i < lines; i++) {
-    const band = await cellsOf(bg, {
-      ...safe,
-      y0: safe.y0 + step * i,
-      y1: safe.y0 + step * (i + 1)
-    })
-    const patch = patchOf(band)
-    if (!patch) return []
-    out.push(patch)
-  }
-  return out
-}
-
-function patchOf(cells: number[] | null): Patch | null {
-  if (!cells || cells.length === 0) return null
-
-  const sorted = [...cells].sort((a, b) => a - b)
-  return {
-    mean: cells.reduce((sum, one) => sum + one, 0) / cells.length,
-
-    darkest: at(sorted, 0.1),
-    lightest: at(sorted, 0.9)
-  }
-}
-
-const at = (sorted: number[], share: number): number =>
-  sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(share * (sorted.length - 1))))]
 
 let kept: { src: string; ctx: CanvasRenderingContext2D } | null = null
 

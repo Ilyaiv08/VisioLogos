@@ -6,7 +6,6 @@ import { MenuPanel, SEPARATOR, type MenuEntry } from './ContextMenu'
 import { Modal } from './Modal'
 import { TrashBox } from './TrashBox'
 import { ModulesBox } from './ModulesBox'
-import { CatalogBox } from './CatalogBox'
 import { RemoteBox } from './RemoteBox'
 import { UpdateBox, UpdateButton } from './UpdateBox'
 import { SITE, SITE_NAME } from '@shared/site'
@@ -437,7 +436,6 @@ export function MenuDialogs(): React.JSX.Element | null {
   if (dialog === 'modules') return <ModulesBox />
   if (dialog === 'update') return <UpdateBox />
   if (dialog === 'remote') return <RemoteBox />
-  if (dialog === 'catalog') return <CatalogBox />
   return null
 }
 

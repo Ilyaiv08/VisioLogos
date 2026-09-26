@@ -260,6 +260,29 @@ export function numberFromName(name: string): { number: string; title: string } 
   return { number: String(Number(m[1])), title: m[2].trim() }
 }
 
+const GENERIC_NAME =
+  /^((презентация|presentation|документ|document|без названия|безымянн\S*|новый|новая|новое|new|untitled|слайд|slide|песня|song|microsoft|powerpoint)[\s\d()._-]*)+$/i
+
+export const STRUCTURED_FORMAT = /^(OpenLyrics|OpenSong|ProPresenter)/
+
+export function importedName(
+  fileName: string,
+  inner: { title: string; number: string },
+  structured = false
+): { title: string; number: string } {
+  const file = numberFromName(fileName.trim())
+  const own = numberFromName(inner.title.trim())
+  const number = file.number || inner.number.trim() || own.number
+
+  const fileTitle = file.title.trim()
+  const ownTitle = own.title.trim()
+  const fileUsable = fileTitle.length > 0 && !GENERIC_NAME.test(fileTitle)
+
+  if (structured && ownTitle) return { title: ownTitle, number }
+  if (fileUsable) return { title: fileTitle, number }
+  return { title: ownTitle || fileTitle, number }
+}
+
 export const renumbered = (ids: string[]): { id: string; number: string }[] =>
   ids.map((id, at) => ({ id, number: String(at + 1) }))
 

@@ -9,7 +9,6 @@ export type DialogId =
   | 'modules'
   | 'update'
   | 'remote'
-  | 'catalog'
 
 interface UiStore {
   tab: TabId

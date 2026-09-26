@@ -1,7 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { SongFormat } from '@shared/songFormats'
 import type {
-  KaraokeLook,
   LiveState,
   LowerThird,
   OutputRole,
@@ -10,6 +9,7 @@ import type {
   Slide,
   StageInfo,
   Song,
+  SongCategory,
   TextItem,
   TrashKind,
   TreeFolder
@@ -63,6 +63,7 @@ import { checkUpdate, installUpdate, openDownloadPage, showDownloaded } from './
 import {
   installVoice,
   installVoiceFromFile,
+  spellVoiceWords,
   voiceCommand,
   voiceModel,
   voiceToControl,
@@ -88,33 +89,20 @@ import {
   deleteSong,
   exportSong,
   importSongsFromDialog,
+  listCategories,
   listSongs,
   markSongPlayed,
   placeSongAt,
   renumberSongs,
-  saveSong
+  saveCategories,
+  saveSong,
+  setSongsCategory
 } from './songs'
-import {
-  addCatalogFiles,
-  addCatalogTab,
-  addSongToCatalog,
-  importToCatalog,
-  listCatalog,
-  moveCatalogSong,
-  moveCatalogTab,
-  removeCatalogSong,
-  removeCatalogTab,
-  renameCatalogSong,
-  renameCatalogTab,
-  takeFromCatalog
-} from './catalog'
 import {
   clearSlide,
   getLive,
   setBlackout,
   setHideText,
-  setKaraoke,
-  setKaraokeLook,
   setLowerThird,
   setStage,
   showSlide
@@ -268,52 +256,28 @@ export function registerIpc(): void {
   ipcMain.handle('songs:save', (_e, song: Song) => saveSong(song))
   ipcMain.handle('songs:delete', (_e, id: string) => deleteSong(id))
   ipcMain.handle('songs:played', (_e, id: string) => markSongPlayed(id))
-  ipcMain.handle('songs:import', (event) =>
-    importSongsFromDialog(BrowserWindow.fromWebContents(event.sender))
+  ipcMain.handle('songs:import', (event, categoryId: string | null) =>
+    importSongsFromDialog(BrowserWindow.fromWebContents(event.sender), categoryId ?? null)
   )
   ipcMain.handle('songs:export', (event, format: SongFormat, songId: string) =>
     exportSong(BrowserWindow.fromWebContents(event.sender), format, songId)
   )
-  ipcMain.handle('songs:add', (_e, files: string[], folderId: string | null) =>
-    addSongFiles(files, folderId)
+  ipcMain.handle(
+    'songs:add',
+    (_e, files: string[], folderId: string | null, categoryId: string | null) =>
+      addSongFiles(files, folderId, categoryId ?? null)
+  )
+  ipcMain.handle('songs:setCategory', (_e, ids: string[], categoryId: string | null) =>
+    setSongsCategory(Array.isArray(ids) ? ids.map(String) : [], categoryId ?? null)
+  )
+  ipcMain.handle('categories:list', () => listCategories())
+  ipcMain.handle('categories:save', (_e, list: SongCategory[]) =>
+    saveCategories(Array.isArray(list) ? list : [])
   )
 
   ipcMain.handle('songs:renumber', (_e, ids: string[]) => renumberSongs(ids))
   ipcMain.handle('songs:place', (_e, id: string, number: number) =>
     placeSongAt(id, Number(number))
-  )
-
-  ipcMain.handle('catalog:list', () => listCatalog())
-  ipcMain.handle('catalog:tabAdd', (_e, name: string) => addCatalogTab(String(name)))
-  ipcMain.handle('catalog:tabRename', (_e, id: string, name: string) =>
-    renameCatalogTab(String(id), String(name))
-  )
-  ipcMain.handle('catalog:tabRemove', (_e, id: string) => removeCatalogTab(String(id)))
-  ipcMain.handle('catalog:tabMove', (_e, id: string, delta: number) =>
-    moveCatalogTab(String(id), Number(delta))
-  )
-
-  ipcMain.handle('catalog:import', (event, tabId: string) =>
-    importToCatalog(BrowserWindow.fromWebContents(event.sender), String(tabId))
-  )
-  ipcMain.handle('catalog:addFiles', (_e, files: string[], tabId: string) =>
-    addCatalogFiles(files, String(tabId))
-  )
-
-  ipcMain.handle('catalog:addSong', async (_e, songId: string, tabId: string) => {
-    const song = (await listSongs()).find((one) => one.id === songId)
-    if (!song) return { ok: false as const, reason: t('catalog.gone') }
-    return addSongToCatalog(song, String(tabId))
-  })
-  ipcMain.handle('catalog:move', (_e, id: string, tabId: string) =>
-    moveCatalogSong(String(id), String(tabId))
-  )
-  ipcMain.handle('catalog:rename', (_e, id: string, title: string) =>
-    renameCatalogSong(String(id), String(title))
-  )
-  ipcMain.handle('catalog:remove', (_e, id: string) => removeCatalogSong(String(id)))
-  ipcMain.handle('catalog:take', (_e, id: string, folderId: string | null) =>
-    takeFromCatalog(String(id), folderId ?? null)
   )
 
   ipcMain.handle('folders:list', () => listFolders())
@@ -353,6 +317,9 @@ export function registerIpc(): void {
   )
 
   ipcMain.handle('voice:command', (_e, command: VoiceCommand) => voiceCommand(command))
+  ipcMain.handle('voice:spell', (_e, tokens: string[]) =>
+    spellVoiceWords(Array.isArray(tokens) ? tokens.map(String).slice(0, 5000) : [])
+  )
 
   ipcMain.handle('voice:heard', (_e, text: string, final: boolean) =>
     voiceToControl('voice:heard', { text, final })
@@ -416,10 +383,6 @@ export function registerIpc(): void {
   ipcMain.handle('live:blackout', (_e, value: boolean) => setBlackout(value))
   ipcMain.handle('live:hideText', (_e, value: boolean) => setHideText(value))
   ipcMain.handle('live:lowerThird', (_e, value: LowerThird | null) => setLowerThird(value))
-  ipcMain.handle('live:karaoke', (_e, value: number | null, word: number | null) =>
-    setKaraoke(value, word)
-  )
-  ipcMain.handle('live:karaokeLook', (_e, look: KaraokeLook) => setKaraokeLook(look))
   ipcMain.handle('live:stage', (_e, patch: Partial<StageInfo>) => setStage(patch))
 }
 

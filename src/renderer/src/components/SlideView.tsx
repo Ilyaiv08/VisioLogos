@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type {
   Countdown,
-  KaraokeLook,
   LowerThird,
   Slide,
   SlideBlock,
@@ -9,7 +8,12 @@ import type {
   SlideTail
 } from '@shared/types'
 import { backgroundCss, textShadowCss } from '@shared/backgrounds'
-import { MAX_FONT_VH } from '@shared/slide'
+import { DEFAULT_ASPECT, MAX_FONT_VH } from '@shared/slide'
+import { askFont, useDevicePixelRatio, useFontTick } from '../lib/slideFonts'
+
+export const STAGE_W = 1920
+
+const MARGIN = 0.99
 
 interface Props {
   slide: Slide | null
@@ -19,12 +23,6 @@ interface Props {
   hideText?: boolean
 
   lowerThird?: LowerThird | null
-
-  karaoke?: number | null
-
-  karaokeWord?: number | null
-
-  karaokeLook?: KaraokeLook | null
 
   showSafeArea?: boolean
 
@@ -37,18 +35,17 @@ export function SlideView({
   blackout = false,
   hideText = false,
   lowerThird = null,
-  karaoke = null,
-  karaokeWord = null,
-  karaokeLook = null,
   showSafeArea = false,
   aspect,
   className
 }: Props): React.JSX.Element {
   const boxRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLDivElement>(null)
   const [fontPx, setFontPx] = useState(0)
-  const [boxH, setBoxH] = useState(0)
-  const [boxW, setBoxW] = useState(0)
+  const [box, setBox] = useState({ w: 0, h: 0 })
+  const fontTick = useFontTick()
+  const unit = 1 / useDevicePixelRatio()
 
   const style = slide?.style
   const contentKey = slide
@@ -57,21 +54,49 @@ export function SlideView({
       }`
     : ''
 
+  const ratio =
+    aspect && aspect > 0 ? aspect : box.w > 0 && box.h > 0 ? box.w / box.h : DEFAULT_ASPECT
+  const stageW = STAGE_W * unit
+  const stageH = (STAGE_W / ratio) * unit
+  const scale = box.w / stageW
+
   useLayoutEffect(() => {
-    const box = boxRef.current
+    const el = boxRef.current
+    if (!el) return
+
+    const measure = (): void =>
+      setBox((was) =>
+        was.w === el.clientWidth && was.h === el.clientHeight
+          ? was
+          : { w: el.clientWidth, h: el.clientHeight }
+      )
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  useLayoutEffect(() => {
     const text = textRef.current
-    if (!box || !text || !style) return
+    const stage = stageRef.current
+    if (!text || !stage || !style) return
+
+    askFont(style.fontFamily, style.bold)
 
     const fit = (): void => {
-      const height = box.clientHeight
-      if (height === 0) return
-      setBoxH(height)
-      setBoxW(box.clientWidth)
+      const height = stageH
+      const room = stageH - padY * 2 - reserve
+
+      const turned = stage.style.transform
+      const capped = text.style.maxHeight
+      stage.style.transform = 'none'
+      text.style.maxHeight = 'none'
 
       const apply = (vh: number): boolean => {
         text.style.fontSize = `${(height * vh) / 100}px`
 
-        return text.scrollHeight <= text.clientHeight + 1
+        return text.getBoundingClientRect().height <= room + unit
       }
 
       const fill = style.fitToScreen !== false
@@ -94,28 +119,28 @@ export function SlideView({
           }
         }
       }
+      best = Math.max(style.minFontSizeVh, best * MARGIN)
       apply(best)
+      text.style.maxHeight = capped
+      stage.style.transform = turned
       setFontPx((height * best) / 100)
     }
 
     fit()
-    const observer = new ResizeObserver(fit)
-    observer.observe(box)
-    return () => observer.disconnect()
 
-  }, [contentKey, style, boxH, boxW])
+  }, [contentKey, style, stageH, unit, fontTick, blackout, hideText])
 
   const refPx = fontPx
     ? fontPx * (style?.referenceScale ?? 0.6)
     : style
-      ? (boxH * style.fontSizeVh * style.referenceScale) / 100
+      ? (stageH * style.fontSizeVh * style.referenceScale) / 100
       : 0
 
   const reserve =
     (style?.showReference && slide?.reference) || slide?.tail ? refPx * 1.5 : 0
 
-  const padX = style ? (boxW * style.paddingPct) / 100 : 0
-  const padY = style ? (boxH * style.paddingPct) / 100 : 0
+  const padX = style ? (stageW * style.paddingPct) / 100 : 0
+  const padY = style ? (stageH * style.paddingPct) / 100 : 0
 
   const video = slide?.background.kind === 'video' && !blackout ? slide.background.src : null
   const fill =
@@ -128,156 +153,119 @@ export function SlideView({
     <div
       className={`slide ${className ?? ''}`}
       ref={boxRef}
-      style={
-        {
-          background: fill,
+      style={{
+        background: fill,
 
-          aspectRatio: aspect && aspect > 0 ? String(aspect) : undefined,
-
-          '--kar-color': karaokeLook?.color ?? undefined,
-          '--kar-base': style?.color ?? undefined,
-          '--kar-ms': karaokeLook ? `${karaokeLook.ms}ms` : undefined
-        } as React.CSSProperties
-      }
+        aspectRatio: aspect && aspect > 0 ? String(aspect) : undefined
+      }}
     >
       {video && <video className="slide__video" src={video} autoPlay loop muted />}
 
       {showSafeArea && <div className="slide__safe-area" />}
 
-      {textVisible && style && (
-        <div
-          className={`slide__body slide__body--${slide.vertical ?? 'center'}`}
-          style={{
-            padding: `${padY}px ${padX}px`,
-            paddingBottom: `${padY + reserve}px`
-          }}
-        >
+      <div
+        ref={stageRef}
+        className="slide__stage"
+        style={{ width: stageW, height: stageH, transform: `scale(${scale})` }}
+      >
+        {textVisible && style && (
           <div
-            ref={textRef}
-            className={`slide__text ${slide.plate ? `slide__text--plate-${slide.plate}` : ''}`}
+            className={`slide__body slide__body--${slide.vertical ?? 'center'}`}
             style={{
-              fontFamily: style.fontFamily,
-              fontSize: fontPx ? `${fontPx}px` : undefined,
-              fontWeight: style.bold ? 700 : 400,
-              lineHeight: style.lineHeight,
+              padding: `${padY}px ${padX}px`,
+              paddingBottom: `${padY + reserve}px`
+            }}
+          >
+            <div
+              ref={textRef}
+              className={`slide__text ${slide.plate ? `slide__text--plate-${slide.plate}` : ''}`}
+              style={{
+                fontFamily: style.fontFamily,
+                fontSize: fontPx ? `${fontPx}px` : undefined,
+                fontWeight: style.bold ? 700 : 400,
+                lineHeight: style.lineHeight,
+                color: style.color,
+                textAlign: style.align,
+                textTransform: style.uppercase ? 'uppercase' : 'none',
+                textShadow: style.shadow ? textShadowCss(style.color) : 'none'
+              }}
+            >
+              {rules && <Divider color={style.color} />}
+              {slide.countdown ? (
+                <CountdownText countdown={slide.countdown} />
+              ) : (
+                <Blocks blocks={slide.blocks} style={style} />
+              )}
+
+              {slide.secondary && slide.secondary.blocks.length > 0 && (
+                <>
+                  {style.dividers && <Divider color={style.color} />}
+                  <div className="slide__secondary">
+                    <Blocks blocks={slide.secondary.blocks} style={style} />
+                  </div>
+                </>
+              )}
+              {rules && <Divider color={style.color} />}
+            </div>
+          </div>
+        )}
+
+        {lowerThird && !blackout && (
+          <div className="slide__lower">
+            <span>{lowerThird.text}</span>
+          </div>
+        )}
+
+        {textVisible && style && slide.tail && (
+          <div
+            className="slide__tail"
+            style={{
               color: style.color,
-              textAlign: style.align,
-              textTransform: style.uppercase ? 'uppercase' : 'none',
+              bottom: `${style.paddingPct * 0.42}%`,
+              fontSize: refPx ? `${refPx}px` : undefined,
               textShadow: style.shadow ? textShadowCss(style.color) : 'none'
             }}
           >
-            {rules && <Divider color={style.color} />}
-            {slide.countdown ? (
-              <CountdownText countdown={slide.countdown} />
-            ) : (
-              <Blocks
-                blocks={slide.blocks}
-                style={style}
-                karaoke={karaoke}
-                karaokeWord={karaokeWord}
-                karaokeColors={karaokeLook?.colors}
-              />
-            )}
-
-            {slide.secondary && slide.secondary.blocks.length > 0 && (
-              <>
-                {style.dividers && <Divider color={style.color} />}
-                <div className="slide__secondary">
-                  <Blocks blocks={slide.secondary.blocks} style={style} />
-                </div>
-              </>
-            )}
-            {rules && <Divider color={style.color} />}
+            <TailMark tail={slide.tail} color={style.color} />
           </div>
-        </div>
-      )}
+        )}
 
-      {lowerThird && !blackout && (
-        <div className="slide__lower">
-          <span>{lowerThird.text}</span>
-        </div>
-      )}
-
-      {textVisible && style && slide.tail && (
-        <div
-          className="slide__tail"
-          style={{
-            color: style.color,
-            bottom: `${style.paddingPct * 0.42}%`,
-            fontSize: refPx ? `${refPx}px` : undefined,
-            textShadow: style.shadow ? textShadowCss(style.color) : 'none'
-          }}
-        >
-          <TailMark tail={slide.tail} color={style.color} />
-        </div>
-      )}
-
-      {textVisible && style?.showReference && slide.reference && (
-        <div
-          className="slide__reference"
-          style={{
-            color: style.color,
-            bottom: `${style.paddingPct * 0.42}%`,
-            right: `${style.paddingPct * 0.7}%`,
-            fontSize: refPx ? `${refPx}px` : undefined,
-            textShadow: style.shadow ? textShadowCss(style.color) : 'none'
-          }}
-        >
-          {slide.reference}
-        </div>
-      )}
+        {textVisible && style?.showReference && slide.reference && (
+          <div
+            className="slide__reference"
+            style={{
+              color: style.color,
+              bottom: `${style.paddingPct * 0.42}%`,
+              right: `${style.paddingPct * 0.7}%`,
+              fontSize: refPx ? `${refPx}px` : undefined,
+              textShadow: style.shadow ? textShadowCss(style.color) : 'none'
+            }}
+          >
+            {slide.reference}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 function Blocks({
   blocks,
-  style,
-  karaoke = null,
-  karaokeWord = null,
-  karaokeColors
+  style
 }: {
   blocks: SlideBlock[]
   style: SlideStyle
-  karaoke?: number | null
-  karaokeWord?: number | null
-
-  karaokeColors?: string[]
 }): React.JSX.Element {
   return (
     <>
       {blocks.map((block, i) => {
-
-        const sung =
-          karaoke === null
-            ? null
-            : i < karaoke
-              ? Infinity
-              : i === karaoke
-                ? (karaokeWord ?? 0)
-                :
-
-                  -1
-
-        const byWord = sung !== null && !block.html.includes('<')
-
         return (
           <p
             key={i}
-            className={[
-              'slide__block',
-              karaoke === null || byWord ? '' : i < karaoke ? 'is-sung' : 'is-unsung'
-            ]
-              .filter(Boolean)
-              .join(' ')}
-
-            style={
-              {
-                fontSize:
-                  block.scale && block.scale !== 1 ? `${block.scale}em` : undefined,
-                '--kar-color': karaokeColors?.[i] ?? undefined
-              } as React.CSSProperties
-            }
+            className="slide__block"
+            style={{
+              fontSize: block.scale && block.scale !== 1 ? `${block.scale}em` : undefined
+            }}
           >
             {block.clock ? (
               <Clock />
@@ -286,44 +274,10 @@ function Blocks({
                 {style.showVerseNumbers && block.verse !== undefined && (
                   <span className="slide__vn">{block.verse}. </span>
                 )}
-                {byWord ? (
-                  <Sung html={block.html} sung={sung} />
-                ) : (
-                  <span dangerouslySetInnerHTML={{ __html: block.html }} />
-                )}
+                <span dangerouslySetInnerHTML={{ __html: block.html }} />
               </>
             )}
           </p>
-        )
-      })}
-    </>
-  )
-}
-
-function Sung({ html, sung }: { html: string; sung: number }): React.JSX.Element {
-  const parts = html.split(/(\s+)/)
-  let at = -1
-
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (!part) return null
-        if (/^\s+$/.test(part)) return <span key={i}>{part}</span>
-
-        at++
-        const state = at < sung ? 'kar--done' : at === sung ? 'kar--now' : ''
-
-        const letters = at === sung ? [...part.replace(/<[^>]*>/g, '')].length : 0
-
-        return (
-          <span
-            key={i}
-            className={`kar ${state}`}
-            style={
-              letters > 1 ? { animationTimingFunction: `steps(${letters})` } : undefined
-            }
-            dangerouslySetInnerHTML={{ __html: part }}
-          />
         )
       })}
     </>

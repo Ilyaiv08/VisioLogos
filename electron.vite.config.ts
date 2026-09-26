@@ -26,11 +26,8 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          // Окно оператора
           index: resolve('src/renderer/index.html'),
-          // Окно вывода (зал / сцена / трансляция)
           output: resolve('src/renderer/output.html'),
-          // Невидимое окно слуха: разбор пения
           voice: resolve('src/renderer/voice.html')
         }
       }

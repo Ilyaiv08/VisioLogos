@@ -3,7 +3,10 @@ import { createRoot } from 'react-dom/client'
 import type { LiveState, OutputRole } from '@shared/types'
 import { SlideView } from './components/SlideView'
 import { StageView } from './components/StageView'
+import { preloadSlideFonts } from './lib/slideFonts'
 import './styles.css'
+
+preloadSlideFonts()
 
 const params = new URLSearchParams(location.search)
 
@@ -78,9 +81,6 @@ function Output(): React.JSX.Element {
       <SlideView
         slide={live?.slide ?? null}
         lowerThird={live?.lowerThird ?? null}
-        karaoke={live?.karaoke ?? null}
-        karaokeWord={live?.karaokeWord ?? null}
-        karaokeLook={live?.karaokeLook ?? null}
         blackout={live?.blackout ?? false}
         hideText={live?.hideText ?? false}
         className="slide--full"

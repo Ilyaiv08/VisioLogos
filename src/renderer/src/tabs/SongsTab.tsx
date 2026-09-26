@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { SongPart, SongPartKind } from '@shared/types'
+import type { Song, SongPart, SongPartKind } from '@shared/types'
 import { PART_KINDS, movedBefore, orderLabel, partLabel, partTitle, songOrder } from '@shared/songs'
+import { songsIn } from '@shared/categories'
+import { CategoryHead, CategoryList } from '../components/Categories'
 import type { ControlTarget } from '../components/ControlPanel'
 import { SongControlPanel } from '../components/SongControlPanel'
 import { SEPARATOR, useContextMenu, type MenuEntry } from '../components/ContextMenu'
@@ -11,13 +13,12 @@ import { SlideView } from '../components/SlideView'
 import { Splitter } from '../components/Splitter'
 import { droppedPaths, hasFiles } from '../lib/dropFiles'
 import { NOTICE_MS, NOTICE_TROUBLE_MS, useAutoHide } from '../lib/fading'
-import { useT } from '../state/i18n'
+import { useT, useTn } from '../state/i18n'
 import { useShot } from '../state/screen'
 import { useLive } from '../state/live'
 import { columnsTemplate, useLayout } from '../state/layout'
 import { useLook } from '../state/look'
-import { useCatalog, backgroundNotice } from '../state/catalog'
-import { useSongs, type ImportReport } from '../state/songs'
+import { backgroundNotice, useSongs, type ImportReport } from '../state/songs'
 import { useService } from '../state/service'
 import { useTree } from '../state/tree'
 
@@ -25,6 +26,7 @@ const KIND_KEY = (kind: SongPartKind): 'part.verse' => `part.${kind}` as 'part.v
 
 export function SongsTab(): React.JSX.Element {
   const t = useT()
+  const tn = useTn()
 
   const shot = useShot()
   const s = useSongs()
@@ -40,7 +42,17 @@ export function SongsTab(): React.JSX.Element {
 
   const searching = s.query.trim().length > 0
 
-  const treeItems: TreeItem[] = s.items.map((song) => ({
+  const openCategory = s.categories.find((one) => one.id === s.categoryId) ?? null
+
+  const shown = useMemo(
+    () => songsIn(s.items, s.categories, openCategory?.id ?? null),
+    [s.items, s.categories, openCategory]
+  )
+
+  const categoryName = (id: string | null | undefined): string | undefined =>
+    s.categories.find((one) => one.id === id)?.name
+
+  const treeItems: TreeItem[] = shown.map((song) => ({
     id: song.id,
     title: song.title || t('common.untitled'),
     meta: song.number ? `№${song.number}` : song.key || undefined,
@@ -75,6 +87,23 @@ export function SongsTab(): React.JSX.Element {
     { label: t('songs.removePart'), danger: true, onClick: () => s.removePart(part.id) }
   ]
 
+  const categoryMenu = (song: Song | undefined): MenuEntry => ({
+    label: t('cats.of'),
+    children: [
+      ...s.categories.map((category) => ({
+        label: category.name,
+        checked: song?.categoryId === category.id,
+        onClick: () => song && void s.setCategory([song.id], category.id)
+      })),
+      SEPARATOR,
+      {
+        label: t('cats.none'),
+        checked: !song?.categoryId,
+        onClick: () => song && void s.setCategory([song.id], null)
+      }
+    ]
+  })
+
   const songMenu = (id: string, title: string, rename?: () => void): MenuEntry[] => [
     { label: t('common.open'), onClick: () => s.open(id) },
     ...(rename
@@ -85,11 +114,7 @@ export function SongsTab(): React.JSX.Element {
       hint: plan?.title ?? t('common.new'),
       onClick: () => void addSong(id)
     },
-    {
-      label: t('catalog.toCatalog'),
-      hint: t('catalog.toCatalogHint'),
-      onClick: () => void toCatalog(id)
-    },
+    categoryMenu(s.items.find((song) => song.id === id)),
     SEPARATOR,
     {
       label: t('songs.deleteNamed', { title: title.slice(0, 24) }),
@@ -105,19 +130,37 @@ export function SongsTab(): React.JSX.Element {
   const leavingReport = useAutoHide(
     report,
     hideReport,
-    report && report.skipped.length > 0 ? NOTICE_TROUBLE_MS : NOTICE_MS
+    report && (report.skipped.length > 0 || report.duplicates.length > 0)
+      ? NOTICE_TROUBLE_MS
+      : NOTICE_MS
   )
 
-  const runImport = async (): Promise<void> => {
-    const result = await s.importFiles()
+  const worth = (result: ImportReport): ImportReport | null =>
+    result.added > 0 || result.skipped.length > 0 || result.duplicates.length > 0 ? result : null
 
-    setReport(result.added > 0 || result.skipped.length > 0 ? result : null)
+  const runImport = async (): Promise<void> => {
+    setReport(worth(await s.importFiles()))
+  }
+
+  const leaveCategory = async (id: string): Promise<void> => {
+    const song = useSongs.getState().items.find((one) => one.id === id)
+    if (!openCategory && song?.categoryId && categoryName(song.categoryId)) {
+      await s.setCategory([id], null)
+    }
+  }
+
+  const moveItem = (id: string, folderId: string | null): void => {
+    void (async () => {
+      await s.moveTo(id, folderId)
+      await leaveCategory(id)
+    })()
   }
 
   const reorder = (id: string, beforeId: string | null, folderId: string | null): void => {
     void (async () => {
       const was = s.items.find((song) => song.id === id)
       if (!was) return
+      await leaveCategory(id)
       if ((was.folderId ?? null) !== folderId) await s.moveTo(id, folderId)
 
       const family = useSongs
@@ -135,17 +178,15 @@ export function SongsTab(): React.JSX.Element {
     return one && two ? songOrder(one, two) : a.title.localeCompare(b.title, 'ru')
   }
 
-  const toCatalog = async (id: string): Promise<void> => {
-    await useCatalog.getState().open()
-    await useCatalog.getState().addFromLibrary(id)
-  }
-
   const [dropping, setDropping] = useState(false)
 
-  const takeFiles = async (files: string[], folderId: string | null): Promise<void> => {
+  const takeFiles = async (
+    files: string[],
+    folderId: string | null,
+    categoryId?: string | null
+  ): Promise<void> => {
     if (files.length === 0) return
-    const result = await s.addFiles(files, folderId)
-    setReport(result.added > 0 || result.skipped.length > 0 ? result : null)
+    setReport(worth(await s.addFiles(files, folderId, categoryId)))
   }
   const bottomRef = useRef<HTMLDivElement>(null)
   const [paste, setPaste] = useState('')
@@ -161,15 +202,16 @@ export function SongsTab(): React.JSX.Element {
 
   const visible = useMemo(() => {
     const q = s.query.trim().toLowerCase()
-    if (!q) return s.items
-    return s.items.filter(
+    const pool = openCategory ? shown : s.items
+    if (!q) return pool
+    return pool.filter(
       (song) =>
         song.title.toLowerCase().includes(q) ||
         song.author.toLowerCase().includes(q) ||
         song.number.toLowerCase().includes(q) ||
         song.parts.some((p) => p.text.toLowerCase().includes(q))
     )
-  }, [s.items, s.query])
+  }, [shown, s.items, s.query, openCategory])
 
   const draft = s.draft
 
@@ -201,6 +243,9 @@ export function SongsTab(): React.JSX.Element {
     : []
 
   const currentPartId = s.slides[s.index]?.partId
+  const currentTimes = s.slides[s.index]?.times ?? 1
+  const timesAt = (position: number): number =>
+    Math.max(1, ...s.slides.filter((one) => one.position === position).map((one) => one.times))
 
   return (
     <div
@@ -230,13 +275,6 @@ export function SongsTab(): React.JSX.Element {
                 onClick={() => void useTree.getState().create('song', null)}
               >
                 {t('tree.addFolder')}
-              </button>
-              <button
-                className="link"
-                title={t('catalog.openHint')}
-                onClick={() => void useCatalog.getState().open()}
-              >
-                {t('catalog.open')}
               </button>
               <button
                 className="link"
@@ -277,6 +315,15 @@ export function SongsTab(): React.JSX.Element {
               placeholder={t('songs.search')}
               onChange={(e) => s.setQuery(e.target.value)}
             />
+            {openCategory ? (
+              <CategoryHead category={openCategory} />
+            ) : (
+              !searching && (
+                <CategoryList
+                  onDropFiles={(files, categoryId) => void takeFiles(files, null, categoryId)}
+                />
+              )
+            )}
             {searching ? (
               <div className="list">
                 {visible.length === 0 && <div className="hint">{t('common.nothingFound')}</div>}
@@ -284,6 +331,8 @@ export function SongsTab(): React.JSX.Element {
                   <div
                     key={song.id}
                     className={`songitem ${draft?.id === song.id ? 'is-active' : ''}`}
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', `item:${song.id}`)}
                     onClick={() => s.open(song.id)}
                     onContextMenu={(e) => open(e, songMenu(song.id, song.title))}
                   >
@@ -291,6 +340,9 @@ export function SongsTab(): React.JSX.Element {
                     <span className="songitem__meta">
                       {song.number && <b>№{song.number}</b>}
                       {song.key && <span>{song.key}</span>}
+                      {!openCategory && categoryName(song.categoryId) && (
+                        <span>{categoryName(song.categoryId)}</span>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -298,8 +350,12 @@ export function SongsTab(): React.JSX.Element {
             ) : (
               <>
 
-                {s.items.length === 0 && (
+                {s.items.length === 0 ? (
                   <div className="hint">{t('songs.emptyLibrary')}</div>
+                ) : openCategory ? (
+                  shown.length === 0 && <div className="hint">{t('cats.empty')}</div>
+                ) : (
+                  shown.length > 0 && <div className="catloose">{t('cats.loose')}</div>
                 )}
                 <FolderTree
                   scope="song"
@@ -309,7 +365,7 @@ export function SongsTab(): React.JSX.Element {
                   onOpen={(id) => s.open(id)}
                   itemMenu={(item, rename) => songMenu(item.id, item.title, rename)}
                   onRenameItem={(id, title) => void s.rename(id, title)}
-                  onMoveItem={(id, folderId) => void s.moveTo(id, folderId)}
+                  onMoveItem={moveItem}
                   onReorder={reorder}
                   compare={byNumber}
                   onDropFiles={(files, folderId) => void takeFiles(files, folderId)}
@@ -543,6 +599,7 @@ export function SongsTab(): React.JSX.Element {
                   onClick={() => void s.goToPart(part.id)}
                 >
                   {partLabel(part)}
+                  {timesAt(position) > 1 && <sup className="parts__times">×{timesAt(position)}</sup>}
                 </button>
               ))}
             </div>
@@ -560,7 +617,14 @@ export function SongsTab(): React.JSX.Element {
                     aspect={shot}
                     showSafeArea
                   />
-                  <figcaption>{t('songs.prepared')}</figcaption>
+                  <figcaption>
+                    {t('songs.prepared')}
+                    {currentTimes > 1 && (
+                      <span className="badge">
+                        {t('songs.timesBadge', { times: tn('n.times', currentTimes) })}
+                      </span>
+                    )}
+                  </figcaption>
                 </div>
               </div>
             </figure>
@@ -571,21 +635,11 @@ export function SongsTab(): React.JSX.Element {
                   <SlideView
                     slide={live.slide}
                     lowerThird={live.lowerThird}
-                    karaoke={live.karaoke}
-                    karaokeWord={live.karaokeWord}
-                    karaokeLook={live.karaokeLook}
                     blackout={live.blackout}
                     hideText={live.hideText}
                     aspect={shot}
                   />
-                  <figcaption>
-                    {t('songs.liveWindow')}
-                    {live.karaoke !== null && (
-                      <span className="badge">
-                        {t('songs.karaokeBadge', { n: live.karaoke + 1 })}
-                      </span>
-                    )}
-                  </figcaption>
+                  <figcaption>{t('songs.liveWindow')}</figcaption>
                 </div>
               </div>
             </figure>
@@ -657,6 +711,11 @@ function ImportReportView({
       </div>
       {formats && <p className="note">{formats}</p>}
       {backgrounds && <p className="note">{backgrounds}</p>}
+      {report.duplicates.length > 0 && (
+        <p className="note note--warn">
+          {t('cats.duplicates', { list: report.duplicates.join(', ') })}
+        </p>
+      )}
       {report.skipped.map((item) => (
         <p className="note note--warn" key={item.file}>
           {item.file} — {item.reason}

@@ -3,6 +3,7 @@ import { copyFile, mkdir, rename, stat, writeFile } from 'node:fs/promises'
 import { join, normalize, sep } from 'node:path'
 import { t } from '@shared/i18n'
 import { askSite, readAll } from './siteFetch'
+import { forgetVocabulary, spellForVoice } from './voiceWords'
 
 const SOURCE = 'https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip'
 
@@ -53,6 +54,7 @@ export async function installVoice(
   const tmp = `${modelPath()}.part`
   await writeFile(tmp, data)
   await rename(tmp, modelPath())
+  forgetVocabulary()
 
   onStep({ stage: 'done' })
   return voiceModel()
@@ -86,7 +88,14 @@ export async function installVoiceFromFile(
 
   await mkdir(dir(), { recursive: true })
   await copyFile(from, modelPath())
+  forgetVocabulary()
   return voiceModel()
+}
+
+export async function spellVoiceWords(tokens: string[]): Promise<Record<string, string[]> | null> {
+  const model = await voiceModel()
+  if (!model.installed) return null
+  return spellForVoice(modelPath(), tokens)
 }
 
 export function voiceFile(path: string): string | null {

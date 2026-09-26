@@ -1,5 +1,4 @@
-import type { KaraokeLook, LiveState, LowerThird, Slide, StageInfo } from '@shared/types'
-import { KARAOKE_LOOK } from '@shared/slide'
+import type { LiveState, LowerThird, Slide, StageInfo } from '@shared/types'
 
 const EMPTY_STAGE: StageInfo = {
   nextTitle: null,
@@ -11,9 +10,6 @@ let live: LiveState = {
   slide: null,
   lowerThird: null,
   stage: EMPTY_STAGE,
-  karaoke: null,
-  karaokeWord: null,
-  karaokeLook: KARAOKE_LOOK,
   blackout: false,
   hideText: false,
   revision: 0
@@ -42,8 +38,6 @@ export function showSlide(slide: Slide): LiveState {
   return commit({
     ...live,
     slide,
-    karaoke: live.karaoke === null ? null : 0,
-    karaokeWord: live.karaoke === null ? null : 0,
     blackout: false,
     hideText: false
   })
@@ -63,14 +57,6 @@ export function setHideText(value: boolean): LiveState {
 
 export function setLowerThird(value: LowerThird | null): LiveState {
   return commit({ ...live, lowerThird: value })
-}
-
-export function setKaraoke(value: number | null, word: number | null = null): LiveState {
-  return commit({ ...live, karaoke: value, karaokeWord: value === null ? null : word })
-}
-
-export function setKaraokeLook(look: KaraokeLook): LiveState {
-  return commit({ ...live, karaokeLook: look })
 }
 
 export function setStage(patch: Partial<StageInfo>): LiveState {

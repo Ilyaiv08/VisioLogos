@@ -6,10 +6,6 @@ interface Props {
   onChange: (hex: string) => void
 
   onPickForBackground?: () => void
-
-  presets?: string[]
-
-  autoOn?: boolean
 }
 
 const TEXT_PRESETS = [
@@ -21,9 +17,7 @@ const TEXT_PRESETS = [
 export function ColorPicker({
   value,
   onChange,
-  onPickForBackground,
-  presets = TEXT_PRESETS,
-  autoOn = false
+  onPickForBackground
 }: Props): React.JSX.Element {
   const t = useT()
   const [hsv, setHsv] = useState(() => hexToHsv(value))
@@ -121,7 +115,7 @@ export function ColorPicker({
         />
         {onPickForBackground && (
           <button
-            className={`picker__auto ${autoOn ? 'is-on' : ''}`}
+            className="picker__auto"
             onClick={onPickForBackground}
             title={t('control.toBgHint')}
           >
@@ -133,10 +127,10 @@ export function ColorPicker({
       <div
         className="picker__presets"
         style={
-          { '--preset-cols': presets.length % 8 === 0 ? 8 : 6 } as React.CSSProperties
+          { '--preset-cols': 6 } as React.CSSProperties
         }
       >
-        {presets.map((c) => (
+        {TEXT_PRESETS.map((c) => (
           <button
             key={c}
             className={`swatch ${c.toLowerCase() === value.toLowerCase() ? 'is-active' : ''}`}

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { partTitle } from '@shared/songs'
 import { LookTabs, ScreenChips, type ControlTarget } from './ControlPanel'
-import { VoiceKaraoke } from './VoiceKaraoke'
+import { VoiceFollow } from './VoiceFollow'
 import { useT } from '../state/i18n'
 import { useLive } from '../state/live'
 import { useSongs } from '../state/songs'
@@ -75,7 +75,7 @@ export function SongControlPanel({ target }: Props): React.JSX.Element {
 
       <ScreenChips />
 
-      <VoiceKaraoke />
+      <VoiceFollow />
 
       <LookTabs target={target} />
     </div>

@@ -328,7 +328,7 @@ export const useService = create<ServiceStore>((set, get) => ({
     }
 
     if (songs.length > 0) {
-      const result = await useSongs.getState().addFiles(songs)
+      const result = await useSongs.getState().addFiles(songs, null, null)
       for (const id of result.ids) await get().addSong(id)
       added += result.added
       skipped.push(...result.skipped)

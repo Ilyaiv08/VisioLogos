@@ -177,24 +177,10 @@ export interface StageInfo {
   startedAt: number | null
 }
 
-export interface KaraokeLook {
-  color: string
-
-  colors?: string[]
-
-  ms: number
-}
-
 export interface LiveState {
   slide: Slide | null
   lowerThird: LowerThird | null
   stage: StageInfo
-
-  karaoke: number | null
-
-  karaokeWord: number | null
-
-  karaokeLook: KaraokeLook
   blackout: boolean
   hideText: boolean
 
@@ -283,10 +269,14 @@ export interface Song {
 
   folderId?: string | null
 
+  categoryId?: string | null
+
   ccli: string
   parts: SongPart[]
 
   order: string[]
+
+  repeats?: Record<string, number>
 
   background?: Background | null
   updatedAt: number
@@ -394,11 +384,7 @@ export interface OutputWindowInfo {
   windowed: boolean
 }
 
-export interface CatalogTab {
+export interface SongCategory {
   id: string
   name: string
-}
-
-export interface CatalogSong extends Song {
-  tabId: string
 }

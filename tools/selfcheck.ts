@@ -46,6 +46,7 @@ import {
 import {
   defaultOrder,
   emptySong,
+  importedName,
   markRepeats,
   movedBefore,
   numberFromName,
@@ -58,40 +59,43 @@ import {
   withKind
 } from '../src/shared/songs'
 import {
-  catalogKey,
-  defaultTabs,
-  findSame,
-  freeTabName,
-  movedTab,
-  searchCatalog,
-  tabAfterRemoved
-} from '../src/shared/catalog'
-import type { CatalogSong, DisplayInfo, Song } from '../src/shared/types'
-import {
-  apartness,
-  bestKaraokeColor,
-  bestKaraokeColors,
-  contrastOf,
-  NEEDED,
-  readability,
-  type Patch
-} from '../src/shared/contrast'
-import { KARAOKE_COLORS, KARAOKE_DARK, KARAOKE_LIGHT } from '../src/shared/slide'
+  cleanCategories,
+  countIn,
+  defaultCategories,
+  freeCategoryName,
+  KIDS,
+  mergeCatalog,
+  movedCategory,
+  placedCategory,
+  REVIVAL,
+  sameSong,
+  songsIn,
+  titleKey
+} from '../src/shared/categories'
+import type { DisplayInfo, Song } from '../src/shared/types'
 import { backgroundFromXml } from '../src/shared/pptxTheme'
 import { readableStyleOn } from '../src/shared/backgrounds'
 import { normalizeTranslatorTag, toPlain } from '../src/shared/text'
 import { isOurSite, langName, modulePath, siteHosts, SITE, SITE_NAME } from '../src/shared/site'
 import { importSongFile } from '../src/main/songImport'
 import {
-  freshWords,
-  grammarOf,
-  locate,
+  DWELL,
+  followFrom,
+  hear,
+  normalizeWord,
+  phrasesOf,
   plainLine,
+  QUIET,
   slips,
-  songGrid,
-  spotOf,
-  startOfLine
-} from '../src/shared/karaokeMatch'
+  spellWith,
+  tapeOf,
+  tokensOf,
+  vocabularyFromFst,
+  vocabularyFromText,
+  type Follow,
+  type Step,
+  type Tape
+} from '../src/shared/singAlong'
 import { pptxBackground } from '../src/main/pptxMedia'
 import { zipSync } from 'fflate'
 import {
@@ -327,8 +331,9 @@ async function main(): Promise<void> {
   checkSongs()
   checkSongRepeats()
   checkSongNumbers()
-  checkCatalog()
-  checkVoiceKaraoke()
+  checkCategories()
+  checkImportNames()
+  checkSingAlong()
   checkDeckBackground()
   checkBibleFile()
   await checkSongImport()
@@ -344,7 +349,6 @@ async function main(): Promise<void> {
   checkI18n()
   checkScreens()
   checkScreenPicker()
-  checkKaraokeColor()
   checkThemeBackground()
   await checkMenus()
   await checkTrash()
@@ -922,57 +926,200 @@ function checkSongNumbers(): void {
   check('бросок на саму себя ничего не ломает', movedBefore(['a', 'b'], 'a', 'a').join('') === 'ab')
 }
 
-function checkCatalog(): void {
-  console.log('\n=== Каталог песен ===')
+function checkImportNames(): void {
+  console.log('\n=== Имя и номер песни при ввозе ===')
 
-  const tabs = defaultTabs()
-  check('вкладок изначально три', tabs.length === 3, String(tabs.length))
-  check('все с именами', tabs.every((tab) => tab.name.trim().length > 0))
+  const pptx = importedName('4. Церковь Божия', { title: 'ЦЕРКОВЬ БОЖИЯ', number: '' })
   check(
-    'у вкладок разные ключи',
-    new Set(tabs.map((tab) => tab.id)).size === tabs.length,
-    tabs.map((tab) => tab.id).join(' ')
+    '«4. Церковь Божия.pptx»: номер 4 из имени файла, а не пропал',
+    pptx.number === '4',
+    JSON.stringify(pptx)
+  )
+  check(
+    'название как у файла, а не заглавными со слайда',
+    pptx.title === 'Церковь Божия',
+    JSON.stringify(pptx)
   )
 
-  const one = (id: string, title: string, tabId: string): CatalogSong => ({
+  const ppt = importedName('1. День! Какое чудо! День! Я 2 (2)', {
+    title: '1. День! Какое чудо! День! Я 2 (2)',
+    number: ''
+  })
+  check(
+    '«.ppt» по-прежнему: номер 1 и название из имени файла',
+    ppt.number === '1' && ppt.title === 'День! Какое чудо! День! Я 2 (2)',
+    JSON.stringify(ppt)
+  )
+
+  const plain = importedName('Благодарности и молитвенные нужды', {
+    title: 'БЛАГОДАРНОСТИ',
+    number: ''
+  })
+  check(
+    'файл без номера остаётся без номера, имя — как у файла',
+    plain.number === '' && plain.title === 'Благодарности и молитвенные нужды',
+    JSON.stringify(plain)
+  )
+
+  const numbers = ['1. А', '2. Б', '3. В', '4. Г'].map(
+    (name) => importedName(name, { title: 'СЛАЙД', number: '' }).number
+  )
+  check('номера идут подряд, как в папке', numbers.join() === '1,2,3,4', numbers.join())
+
+  check(
+    'безликое имя файла уступает названию со слайда',
+    importedName('Презентация1', { title: 'Великий Бог', number: '' }).title === 'Великий Бог'
+  )
+  check(
+    'и «Новая песня (3)» тоже',
+    importedName('Новая песня (3)', { title: 'Великий Бог', number: '' }).title === 'Великий Бог'
+  )
+
+  const lyrics = importedName('12. export', { title: 'Великий Бог', number: '' }, true)
+  check(
+    'OpenLyrics: название из самого файла, номер — из имени',
+    lyrics.title === 'Великий Бог' && lyrics.number === '12',
+    JSON.stringify(lyrics)
+  )
+  check(
+    'номер из имени файла главнее записанного внутри',
+    importedName('3. Песня', { title: 'Песня', number: '9' }).number === '3'
+  )
+  check(
+    'нет номера в имени — берём записанный внутри',
+    importedName('Песня', { title: 'Песня', number: '77' }).number === '77'
+  )
+  check(
+    'обычное название со словом «песня» безликим не считается',
+    importedName('Песня о любви', { title: 'ЛЮБОВЬ', number: '' }).title === 'Песня о любви'
+  )
+  check(
+    '«Презентация Microsoft PowerPoint» — безликое имя',
+    importedName('Презентация Microsoft PowerPoint', { title: 'Слава', number: '' }).title === 'Слава'
+  )
+  check(
+    'номер в названии со слайда тоже не теряется',
+    importedName('Презентация2', { title: '5. Слава', number: '' }).number === '5'
+  )
+}
+
+function checkCategories(): void {
+  console.log('\n=== Категории песен ===')
+
+  setLang('ru')
+  const list = defaultCategories()
+  check('категорий изначально три', list.length === 3, String(list.length))
+  check('первая — «Песни Возрождения»', list[0].name === 'Песни Возрождения', list[0].name)
+  check('вторая — для старшей группы', list[1].name === 'Песни для старшей группы', list[1].name)
+  check('третья — для детской группы', list[2].name === 'Песни для детской группы', list[2].name)
+  check('у категорий разные ключи', new Set(list.map((one) => one.id)).size === list.length)
+
+  const song = (id: string, title: string, categoryId: string | null = null, number = ''): Song => ({
     ...emptySong(),
     id,
     title,
-    tabId
+    number,
+    categoryId
   })
-
   const songs = [
-    one('1', 'Бог велик', tabs[0].id),
-    one('2', 'Бог рядом', tabs[0].id),
-    one('3', 'Великий Бог', tabs[1].id),
-    one('4', 'Свет во тьме', tabs[2].id)
+    song('1', 'Бог велик', REVIVAL, '12'),
+    song('2', 'Свет во тьме', KIDS),
+    song('3', 'Новая песнь')
   ]
 
-  check('название сравнивается без знаков и регистра', catalogKey('Бог велик!') === catalogKey('бог  ВЕЛИК'))
-  check('«ё» и «е» — одно и то же', catalogKey('Свёт') === catalogKey('Свет'))
+  check('название сравнивается без знаков и регистра', titleKey('Бог велик!') === titleKey('бог  ВЕЛИК'))
+  check('«ё» и «е» — одно и то же', titleKey('Свёт') === titleKey('Свет'))
+  check('повтор по названию виден', sameSong(songs, 'бог велик')?.id === '1')
+  check('тот же номер — тоже повтор', sameSong(songs, 'Бог велик', '12')?.id === '1')
+  check('другой номер — другая песня', sameSong(songs, 'Бог велик', '13') === null)
+  check('сама себя повтором не считает', sameSong(songs, 'Бог велик', '', '1') === null)
+  check('пустое название повтором не считается', sameSong(songs, '   ') === null)
 
-  check('занятое название видно', findSame(songs, 'бог велик')?.id === '1')
-  check('незанятое — нет', findSame(songs, 'Новая песня') === null)
-  check('сама себя дубликатом не считает', findSame(songs, 'Бог велик', '1') === null)
-  check('пустое название дубликатом не считается', findSame(songs, '   ') === null)
-
-  const found = searchCatalog(songs, 'Бог')
   check(
-    'поиск идёт по всему каталогу, а не по вкладке',
-    found.length === 3 && found.some((s) => s.tabId === tabs[1].id),
-    found.map((s) => s.title).join(', ')
+    'открытая категория показывает только свои песни',
+    songsIn(songs, list, KIDS).map((one) => one.id).join() === '2'
   )
-  check('пустой запрос — весь каталог', searchCatalog(songs, '  ').length === songs.length)
+  check(
+    'вне категорий видны только песни без категории',
+    songsIn(songs, list, null).map((one) => one.id).join() === '3'
+  )
+  check(
+    'песня из удалённой категории не теряется',
+    songsIn([song('9', 'Сирота', 'cat-нет')], list, null).length === 1
+  )
+  check('песни в категории считаются', countIn(songs, REVIVAL) === 1)
 
-  const moved = movedTab(tabs, tabs[2].id, -1)
-  check('вкладка переставляется', moved[1].id === tabs[2].id, moved.map((x) => x.name).join(' | '))
-  check('за край не уезжает', movedTab(tabs, tabs[0].id, -1) === tabs)
+  const moved = movedCategory(list, list[2].id, -1)
+  check('категория переставляется', moved[1].id === list[2].id, moved.map((one) => one.name).join(' | '))
+  check('за край не уезжает', movedCategory(list, list[0].id, -1) === list)
+  check(
+    'перетащили вниз — встала на место той, на которую бросили',
+    placedCategory(list, list[0].id, list[2].id).map((one) => one.id).join() ===
+      [list[1].id, list[2].id, list[0].id].join()
+  )
+  check(
+    'перетащили вверх — встала перед ней',
+    placedCategory(list, list[2].id, list[0].id).map((one) => one.id).join() ===
+      [list[2].id, list[0].id, list[1].id].join()
+  )
+  check('бросили на саму себя — порядок тот же', placedCategory(list, list[1].id, list[1].id) === list)
+  check('занятое имя не повторяется', freeCategoryName(list, list[0].name) === `${list[0].name} 2`)
+  check('свободное имя не трогаем', freeCategoryName(list, 'Рождественские') === 'Рождественские')
+  check(
+    'мусор из файла отбрасывается',
+    cleanCategories([{ id: 'a', name: 'А' }, { id: 'a', name: 'Б' }, { id: '', name: 'В' }, null, 5])
+      .length === 1
+  )
 
-  check('песням есть куда переехать', tabAfterRemoved(tabs, tabs[0].id)?.id === tabs[1].id)
-  check('последнюю вкладку не убираем', tabAfterRemoved([tabs[0]], tabs[0].id) === null)
+  const old = {
+    tabs: [
+      { id: 'tab-revival', name: 'Песни возрождения' },
+      { id: 'tab-kids', name: 'Детские' },
+      { id: 'tab-elder', name: 'Старшие' },
+      { id: 'tab-777', name: 'Рождество' }
+    ],
+    songs: [
+      { ...song('c1', 'В дизайне Божьем'), tabId: 'tab-revival' },
+      { ...song('c2', 'Свет во тьме'), tabId: 'tab-elder' },
+      { ...song('c3', 'Новая песнь'), tabId: 'tab-777' },
+      { ...song('c4', 'Звезда'), tabId: 'tab-777' }
+    ]
+  }
+  const merged = mergeCatalog(songs, [], old, 1000)
+  check(
+    'после переноса категорий четыре',
+    merged.categories.length === 4,
+    merged.categories.map((one) => one.name).join(' | ')
+  )
+  check('имена по умолчанию — новые', merged.categories[0].name === 'Песни Возрождения')
+  check('своя вкладка каталога стала категорией', merged.categories[3]?.name === 'Рождество')
+  check('новые песни каталога перенесены', merged.added === 2, String(merged.added))
 
-  check('занятое имя вкладки не повторяется', freeTabName(tabs, tabs[0].name) === `${tabs[0].name} 2`)
-  check('свободное имя не трогаем', freeTabName(tabs, 'Рождественские') === 'Рождественские')
+  const brought = merged.items.find((one) => one.title === 'В дизайне Божьем')
+  check('песня легла в «Песни Возрождения»', brought?.categoryId === REVIVAL, String(brought?.categoryId))
+  check('у перенесённой песни ключ библиотеки', brought?.id.startsWith('song-') === true, brought?.id)
+  check('поле вкладки не перенесено', brought !== undefined && !('tabId' in brought))
+  check(
+    'песня, что была и там и там, не раздвоилась',
+    merged.items.filter((one) => titleKey(one.title) === titleKey('Свет во тьме')).length === 1
+  )
+  check('своя категория у песни не сменилась', merged.items.find((one) => one.id === '2')?.categoryId === KIDS)
+  check(
+    'песня без категории получила категорию из каталога',
+    merged.items.find((one) => one.id === '3')?.categoryId === 'tab-777' && merged.tagged === 1
+  )
+  check(
+    'и новая песня из своей вкладки — тоже',
+    merged.items.find((one) => one.title === 'Звезда')?.categoryId === 'tab-777'
+  )
+  check('повторный перенос ничего не добавляет', mergeCatalog(merged.items, merged.categories, old, 2000).added === 0)
+
+  const fresh = mergeCatalog([], [], null, 1)
+  check('без старого каталога — просто три категории', fresh.categories.length === 3 && fresh.items.length === 0)
+  check(
+    'битый каталог ничего не ломает',
+    mergeCatalog(songs, [], { songs: [null as never, { tabId: 'x' } as never] }, 1).added === 0
+  )
 }
 
 function checkDeckBackground(): void {
@@ -1009,49 +1156,248 @@ function checkDeckBackground(): void {
   check('чужой файл не ломает разбор', pptxBackground(Buffer.from('не zip')) === null)
 }
 
-function checkVoiceKaraoke(): void {
-  console.log('\n=== Караоке на слух ===')
+function checkSingAlong(): void {
+  console.log('\n=== Листание по голосу ===')
 
-  const slides = [
-    { lines: ['Свят свят свят Господь Бог Вседержитель', 'Рано утром песнь моя к Тебе взойдёт'] },
-    { lines: ['Свят свят свят милостивый и сильный', 'Бог в трёх лицах благословенный Бог'] }
-  ]
-  const grid = songGrid(slides)
-
-  check('лента собрана из всех слов', grid.words.length === 25, String(grid.words.length))
-  check('строк четыре', grid.places.length === 4, String(grid.places.length))
+  check('разметка из строки убрана', plainLine('<i>Свят</i> Господь') === 'Свят Господь')
   check(
-    'третья строка лежит на втором слайде',
-    grid.places[2]?.slide === 1 && grid.places[2]?.at === 0
+    'слова строки без знаков, дефис внутри слова остаётся',
+    tokensOf('«Господь — моя сила», кто-то!').join(' ') === 'господь моя сила кто-то',
+    tokensOf('«Господь — моя сила», кто-то!').join(' ')
   )
-  check('начало третьей строки — после двенадцати слов', startOfLine(grid, 2) === 13, String(startOfLine(grid, 2)))
+  check('«ё» сравнивается как «е»', normalizeWord('Моё!') === 'мое')
+
+  const known = new Set(['моё', 'твоё', 'сердце', 'кто-то', 'бог', 'отец', 'идёт', 'все', 'всё'])
+  check('«мое» написано без точек — слышим «моё»', spellWith(known, 'мое').join() === 'моё')
+  check('«идет» тоже', spellWith(known, 'идет').join() === 'идёт')
+  check('знакомое слово остаётся как есть', spellWith(known, 'сердце').join() === 'сердце')
+  check('«все» и «всё» не путаются', spellWith(known, 'все').join() === 'все')
+  check('слово с дефисом целиком', spellWith(known, 'кто-то').join() === 'кто-то')
+  check('незнакомое слово с дефисом — по частям', spellWith(known, 'бог-отец').join(' ') === 'бог отец')
+  check('незнакомое слово модуль не услышит', spellWith(known, 'агнцу').length === 0)
+
+  const vocabulary = vocabularyFromText('<eps> 0\n!SIL 1\n[unk] 2\nбог 3\nмоё 4\n')
+  check(
+    'словарь из words.txt без служебных слов',
+    vocabulary.size === 2 && vocabulary.has('бог') && vocabulary.has('моё'),
+    [...vocabulary].join(' ')
+  )
+
+  const fst = fakeFst(['<eps>', '!SIL', '[unk]', 'господь', 'моё', 'сердце'])
+  const fromFst = vocabularyFromFst(fst)
+  check(
+    'словарь прочитан из заголовка Gr.fst',
+    fromFst?.size === 3 && fromFst.has('господь') && fromFst.has('моё'),
+    fromFst ? [...fromFst].join(' ') : 'null'
+  )
+  check('чужой файл словарём не считается', vocabularyFromFst(new Uint8Array(64)) === null)
+  check('обрезанный файл ничего не ломает', vocabularyFromFst(fst.subarray(0, 60)) === null)
+
+  const grammar = JSON.parse(phrasesOf([['свят', 'свят'], ['бог'], ['свят', 'свят'], []]))
+  check('в словаре распознавания строки без повторов и «[unk]»', grammar.join('|') === 'свят свят|бог|[unk]')
 
   check('одна потерянная буква прощается длинному слову', slips('вседержител', 'вседержитель', 2) === 1)
   check('короткому слову не прощается ничего', slips('дом', 'дар', 0) > 0)
 
-  const found = locate(grid, 0, ['свят', 'господь', 'бог'])
-  check('цепочка нашлась', found.hits >= 2, String(found.hits))
+  const song = [
+    ['Господь моя сила и щит', 'На Него уповает сердце моё'],
+    ['Буду петь Ему новую песнь', 'И славить имя Его вовеки'],
+    ['Свят свят свят Господь Бог', 'Вся земля полна славы Его'],
+    ['Аллилуйя аллилуйя', 'Слава Тебе Господь']
+  ]
+  const tape = tapeFrom(song)
+
+  check('слайдов четыре', tape.slides.length === 4)
   check(
-    'место — на первой строке',
-    spotOf(grid, found.at).line === 0,
-    String(spotOf(grid, found.at).line)
+    'сигнал к переходу — последнее слово слайда',
+    tape.words[tape.slides[0].cue].norm === 'мое',
+    tape.words[tape.slides[0].cue]?.norm
+  )
+  check('ворота — начало последней строки', tape.slides[0].gate === 5, String(tape.slides[0].gate))
+
+  const words = (text: string): string[] => tokensOf(text)
+  const verse = words('господь моя сила и щит на него уповает сердце моё')
+
+  let run = sing(tape, followFrom(tape, 0, 0), verse, 0, 400)
+  check(
+    'переход ровно на последнем слове, а не раньше',
+    run.turns.length === 1 && run.turns[0].word === 'моё' && run.turns[0].to === 1,
+    JSON.stringify(run.turns)
+  )
+  check('после перехода ведём уже второй слайд', run.state.slide === 1 && run.state.at === tape.slides[1].from)
+
+  run = sing(tape, followFrom(tape, 0, 0), words('господь сила уповает моё'), 0, 500)
+  check(
+    'пропущенные слова не мешают: переход на последнем',
+    run.turns.length === 1 && run.turns[0].word === 'моё',
+    JSON.stringify(run.turns)
   )
 
-  const weak = locate(grid, 0, ['бог'])
-  check('одного слова мало, чтобы прыгнуть', weak.hits === 0, String(weak.hits))
+  run = sing(tape, followFrom(tape, 0, 0), words('господь моё'), 0, 900)
+  check('последнее слово не к месту — перехода нет', run.turns.length === 0, JSON.stringify(run.turns))
 
+  run = sing(tape, followFrom(tape, 0, 0), verse, 0, 100)
+  check('слишком быстро — перехода по последнему слову нет', run.turns.length === 0)
+  run = sing(tape, run.state, words('буду петь ему новую'), 1000, 300)
   check(
-    'новые слова считаются от общего начала',
-    freshWords('свят свят', 'свят свят свят господь').join(' ') === 'свят господь'
+    'но стоит запеть следующий слайд — он включается',
+    run.turns.length === 1 && run.turns[0].to === 1 && run.turns[0].word === 'петь',
+    JSON.stringify(run.turns)
   )
-  check('ничего нового — пустой список', freshWords('свят свят', 'свят свят').length === 0)
 
-  const grammar = JSON.parse(grammarOf(slides.flatMap((one) => one.lines)))
-  check('в словаре четыре строки и «[unk]»', grammar.length === 5, String(grammar.length))
-  check('разметка из строки убрана', plainLine('<i>Свят</i> Господь') === 'Свят Господь')
+  const twice = tapeFrom(song, [2])
+  run = sing(twice, followFrom(twice, 0, 0), verse, 0, 400)
+  check(
+    'слайд поют дважды: после первого раза остаёмся',
+    run.turns.length === 0 && run.agains.length === 1 && run.state.pass === 1,
+    JSON.stringify({ turns: run.turns, agains: run.agains })
+  )
+  run = sing(twice, run.state, verse, 5000, 400)
+  check(
+    'после второго раза — переход',
+    run.turns.length === 1 && run.turns[0].word === 'моё' && run.turns[0].to === 1,
+    JSON.stringify(run.turns)
+  )
 
-  const end = spotOf(grid, startOfLine(grid, 1))
-  check('конец строки — это начало следующей', end.line === 1 && end.word === 0)
+  run = sing(twice, followFrom(twice, 0, 0), verse, 0, 100)
+  run = sing(twice, run.state, verse, 2000, 400)
+  check(
+    'первый раз пропели мимо ушей — второй всё равно засчитан',
+    run.turns.length === 1 && run.turns[0].to === 1,
+    JSON.stringify({ turns: run.turns, agains: run.agains })
+  )
+
+  run = sing(tape, followFrom(tape, 0, 0), verse, 0, 400)
+  run = sing(tape, run.state, words('сердце моё моё'), 4000, 200)
+  check('хвост прошлого слайда не возвращает назад', run.jumps.length === 0 && run.state.slide === 1)
+
+  run = sing(tape, followFrom(tape, 1, 0), words('вовеки'), 0, 400)
+  check('последнее слово в самом начале слайда — не переход', run.turns.length === 0)
+
+  run = sing(tape, followFrom(tape, 0, 0), ['[unk]', 'и', 'на', 'а'], 0, 400)
+  check('шум и короткие слова пропускаются', run.state.at === 0 && run.state.stray.length === 0)
+
+  run = sing(tape, followFrom(tape, 0, 0), words('свят свят свят господь бог вся земля полна славы'), 0, 400)
+  check(
+    'перепрыгнули через слайд — программа догоняет',
+    run.state.slide === 2 && run.jumps.some((one) => one.to === 2) && !run.turns.some((one) => one.to === 1),
+    JSON.stringify({ turns: run.turns, jumps: run.jumps, slide: run.state.slide })
+  )
+
+  const deaf = tapeOf([
+    {
+      times: 1,
+      lines: [
+        [hearable('ликуй'), hearable('душа'), hearable('моя')],
+        [hearable('поёт'), hearable('агнцу'), { norm: 'хвалу', hear: false }]
+      ]
+    },
+    { times: 1, lines: [[hearable('второй'), hearable('слайд')]] }
+  ])
+  check('незнакомое модулю слово сигналом не бывает', deaf.words[deaf.slides[0].cue].norm === 'агнцу')
+  run = sing(deaf, followFrom(deaf, 0, 0), words('ликуй душа моя поёт агнцу'), 0, 400)
+  check('переход на последнем слове, которое модуль знает', run.turns.length === 1 && run.turns[0].word === 'агнцу')
+
+  const long = tapeFrom(
+    Array.from({ length: 40 }, (_, i) => [
+      `Строка номер ${i} первая песня славная`,
+      `Вторая строка слайда ${i} поётся громко`
+    ])
+  )
+  const pool = long.words.map((one) => one.norm)
+  let seed = 7
+  const random = (): number => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
+  }
+  let state = followFrom(long, 0, 0)
+  const started = performance.now()
+  for (let i = 0; i < 4000; i++) {
+    state = hear(long, state, [pool[Math.floor(random() * pool.length)]], i * 250).state
+  }
+  const spent = performance.now() - started
+  check('4000 случайных слов на длинной песне — быстро', spent < 1500, `${Math.round(spent)} мс`)
+
+  check('пауза после перехода не короче задержки', QUIET >= DWELL)
+}
+
+function hearable(word: string): { norm: string; hear: boolean } {
+  return { norm: normalizeWord(word), hear: true }
+}
+
+function tapeFrom(slides: string[][], times: number[] = []): Tape {
+  return tapeOf(
+    slides.map((lines, i) => ({
+      times: times[i] ?? 1,
+      lines: lines.map((line) => tokensOf(line).map(hearable))
+    }))
+  )
+}
+
+function sing(
+  tape: Tape,
+  from: Follow,
+  words: string[],
+  start: number,
+  gap: number
+): {
+  state: Follow
+  turns: { to: number; word: string }[]
+  jumps: { to: number; word: string }[]
+  agains: { pass: number; word: string }[]
+} {
+  let state = from
+  const turns: { to: number; word: string }[] = []
+  const jumps: { to: number; word: string }[] = []
+  const agains: { pass: number; word: string }[] = []
+
+  words.forEach((word, i) => {
+    const result: { state: Follow; step: Step } = hear(tape, state, [word], start + i * gap)
+    state = result.state
+    if (result.step.kind === 'turn') turns.push({ to: result.step.to, word })
+    if (result.step.kind === 'jump') jumps.push({ to: result.step.to, word })
+    if (result.step.kind === 'again') agains.push({ pass: result.step.pass, word })
+  })
+
+  return { state, turns, jumps, agains }
+}
+
+function fakeFst(symbols: string[]): Uint8Array {
+  const parts: number[] = []
+  const int32 = (value: number): void => {
+    const b = new Uint8Array(4)
+    new DataView(b.buffer).setInt32(0, value, true)
+    parts.push(...b)
+  }
+  const int64 = (value: number): void => {
+    const b = new Uint8Array(8)
+    new DataView(b.buffer).setBigInt64(0, BigInt(value), true)
+    parts.push(...b)
+  }
+  const text = (value: string): void => {
+    const b = new TextEncoder().encode(value)
+    int32(b.length)
+    parts.push(...b)
+  }
+
+  int32(2125659606)
+  text('ngram')
+  text('standard')
+  int32(4)
+  int32(3)
+  int64(0)
+  int64(1)
+  int64(10)
+  int64(0)
+  int32(2125658996)
+  text('words.txt')
+  int64(symbols.length)
+  int64(symbols.length)
+  symbols.forEach((symbol, i) => {
+    text(symbol)
+    int64(i)
+  })
+  return new Uint8Array(parts)
 }
 
 function checkBibleFile(): void {
@@ -1805,109 +2151,6 @@ function checkThemeBackground(): void {
     backgroundFromXml({
       slide: '<p:sld><p:bg><p:bgPr><a:blipFill><a:blip r:embed="rId2"/></a:blipFill></p:bgPr></p:bg></p:sld>'
     }) === null
-  )
-}
-
-function checkKaraokeColor(): void {
-  console.log('\n=== Цвет караоке под фон ===')
-
-  const ровный = (light: number): Patch => ({ mean: light, darkest: light, lightest: light })
-  const набор = KARAOKE_COLORS
-
-  check('в палитре есть и светлые, и тёмные', KARAOKE_LIGHT.length > 0 && KARAOKE_DARK.length > 0)
-  check(
-    'светлые действительно светлые',
-    KARAOKE_LIGHT.every((c) => readability(c, ровный(0.02)) >= NEEDED),
-    KARAOKE_LIGHT.filter((c) => readability(c, ровный(0.02)) < NEEDED).join(', ')
-  )
-  check(
-    'тёмные действительно тёмные',
-    KARAOKE_DARK.every((c) => readability(c, ровный(0.95)) >= NEEDED),
-    KARAOKE_DARK.filter((c) => readability(c, ровный(0.95)) < NEEDED).join(', ')
-  )
-  check(
-    'цвета в палитре не повторяются',
-    new Set(набор).size === набор.length,
-    String(набор.length)
-  )
-
-  check('чёрное на белом — двадцать один к одному', Math.round(contrastOf(0, 1)) === 21)
-  check('сам с собой — один к одному', contrastOf(0.3, 0.3) === 1)
-
-  const наТёмном = bestKaraokeColor(ровный(0.02), '#ffffff', набор)
-  const наСветлом = bestKaraokeColor(ровный(0.95), '#111111', набор)
-  check(
-    'на тёмном фоне цвет светлый',
-    наТёмном !== null && readability(наТёмном, ровный(0.02)) >= NEEDED,
-    String(наТёмном)
-  )
-
-  check(
-    'на светлом фоне цвет тёмный',
-    наСветлом !== null && readability(наСветлом, ровный(0.95)) >= NEEDED,
-    String(наСветлом)
-  )
-  check('и не совпадает с цветом текста', наСветлом !== '#111111', String(наСветлом))
-
-  const пёстрый: Patch = { mean: 0.5, darkest: 0.02, lightest: 0.95 }
-  const выбран = bestKaraokeColor(пёстрый, '#ffffff', набор)
-  check('на пёстром фоне цвет нашёлся', выбран !== null)
-
-  const лучший = Math.max(...набор.map((c) => readability(c, пёстрый)))
-  check(
-    'взят самый контрастный из возможных',
-    выбран !== null && Math.abs(readability(выбран, пёстрый) - лучший) < 1e-9,
-    `${выбран} → ${readability(выбран ?? '#000000', пёстрый).toFixed(2)} из ${лучший.toFixed(2)}`
-  )
-  check(
-    'белое на таком фоне не берём — сольётся с небом',
-    выбран !== '#ffffff',
-    String(выбран)
-  )
-
-  check(
-    'по средней яркости ответ был бы другим',
-    bestKaraokeColor(ровный(0.5), '#ffffff', набор) !== выбран,
-    `${bestKaraokeColor(ровный(0.5), '#ffffff', набор)} против ${выбран}`
-  )
-
-  check('цвет сам с собой неразличим', apartness('#6ec1ff', '#6ec1ff') === 0)
-  check('белое и чёрное различимы вполне', apartness('#ffffff', '#000000') === 1)
-  check(
-    'закраска не совпадает с цветом текста',
-    bestKaraokeColor(ровный(0.02), '#ffffff', ['#ffffff', '#ffe08a']) === '#ffe08a'
-  )
-
-  const небо = ровный(0.92)
-  const земля = ровный(0.02)
-  const всё: Patch = { mean: 0.47, darkest: 0.02, lightest: 0.92 }
-
-  const построчно = bestKaraokeColors(всё, [небо, небо, земля, земля], '#ffffff', набор)
-  check('цвет нашёлся каждой строке', построчно.length === 4, построчно.join(' '))
-  check(
-    'на светлых строках цвет тёмный',
-    построчно.slice(0, 2).every((c) => readability(c, небо) >= NEEDED),
-    построчно.slice(0, 2).join(' ')
-  )
-  check(
-    'на тёмных строках цвет светлый',
-    построчно.slice(2).every((c) => readability(c, земля) >= NEEDED),
-    построчно.slice(2).join(' ')
-  )
-  check('верх и низ покрашены по-разному', построчно[0] !== построчно[3])
-
-  const ровно = bestKaraokeColors(ровный(0.02), [ровный(0.02), ровный(0.02), ровный(0.02)], '#ffffff', набор)
-  check('на ровном фоне цвет у всех строк один', new Set(ровно).size === 1, ровно.join(' '))
-  check('строк нет — и цветов нет', bestKaraokeColors(ровный(0.5), [], '#ffffff', набор).length === 0)
-  check(
-    'пустой набор не ломает построчный подбор',
-    bestKaraokeColors(ровный(0.5), [ровный(0.5)], '#ffffff', []).length === 0
-  )
-
-  check('пустой набор — ответа нет', bestKaraokeColor(ровный(0.5), '#ffffff', []) === null)
-  check(
-    'непонятный цвет текста ничего не ломает',
-    bestKaraokeColor(ровный(0.02), 'красный', набор) !== null
   )
 }
 

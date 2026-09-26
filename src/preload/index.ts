@@ -33,6 +33,7 @@ interface SongImport {
   ids: string[]
   formats: Record<string, number>
   skipped: { file: string; reason: string }[]
+  duplicates: string[]
 }
 
 type BibleFileResult =
@@ -47,28 +48,6 @@ type DeckToSong =
 
       background: { existed: boolean } | null
     }
-  | { ok: false; reason: string }
-
-interface CatalogState {
-  tabs: CatalogTab[]
-  songs: CatalogSong[]
-}
-
-interface CatalogImport extends CatalogState {
-  added: number
-  backgrounds: BackgroundReport
-
-  duplicates: string[]
-  formats: Record<string, number>
-  skipped: { file: string; reason: string }[]
-}
-
-type CatalogAdd =
-  | { ok: true; catalog: CatalogState; id: string }
-  | { ok: false; reason: string }
-
-type CatalogTake =
-  | { ok: true; songs: Song[]; id: string; existed: boolean }
   | { ok: false; reason: string }
 
 interface RemoteDevice {
@@ -114,10 +93,7 @@ import type { TextFormat } from '@shared/textFormats'
 import type { Chrome } from '@shared/themes'
 import type {
   BackgroundItem,
-  CatalogSong,
-  CatalogTab,
   DisplayInfo,
-  KaraokeLook,
   LiveState,
   LowerThird,
   OutputRole,
@@ -127,6 +103,7 @@ import type {
   ServiceFolder,
   Slide,
   Song,
+  SongCategory,
   StageInfo,
   Deck,
   TextItem,
@@ -248,10 +225,17 @@ const api = {
     save: (song: Song): Promise<Song[]> => ipcRenderer.invoke('songs:save', song),
     remove: (id: string): Promise<Song[]> => ipcRenderer.invoke('songs:delete', id),
     played: (id: string): Promise<void> => ipcRenderer.invoke('songs:played', id),
-    import: (): Promise<SongImport> => ipcRenderer.invoke('songs:import'),
+    import: (categoryId: string | null = null): Promise<SongImport> =>
+      ipcRenderer.invoke('songs:import', categoryId),
 
-    add: (files: string[], folderId: string | null = null): Promise<SongImport> =>
-      ipcRenderer.invoke('songs:add', files, folderId),
+    add: (
+      files: string[],
+      folderId: string | null = null,
+      categoryId: string | null = null
+    ): Promise<SongImport> => ipcRenderer.invoke('songs:add', files, folderId, categoryId),
+
+    setCategory: (ids: string[], categoryId: string | null): Promise<Song[]> =>
+      ipcRenderer.invoke('songs:setCategory', ids, categoryId),
     export: (format: SongFormat, songId: string): Promise<string | null> =>
       ipcRenderer.invoke('songs:export', format, songId),
 
@@ -261,35 +245,10 @@ const api = {
       ipcRenderer.invoke('songs:place', id, number)
   },
 
-  catalog: {
-    list: (): Promise<CatalogState> => ipcRenderer.invoke('catalog:list'),
-
-    tabAdd: (name: string): Promise<CatalogState> =>
-      ipcRenderer.invoke('catalog:tabAdd', name),
-    tabRename: (id: string, name: string): Promise<CatalogState> =>
-      ipcRenderer.invoke('catalog:tabRename', id, name),
-    tabRemove: (id: string): Promise<CatalogState> =>
-      ipcRenderer.invoke('catalog:tabRemove', id),
-    tabMove: (id: string, delta: number): Promise<CatalogState> =>
-      ipcRenderer.invoke('catalog:tabMove', id, delta),
-
-    import: (tabId: string): Promise<CatalogImport> =>
-      ipcRenderer.invoke('catalog:import', tabId),
-
-    addFiles: (files: string[], tabId: string): Promise<CatalogImport> =>
-      ipcRenderer.invoke('catalog:addFiles', files, tabId),
-
-    addSong: (songId: string, tabId: string): Promise<CatalogAdd> =>
-      ipcRenderer.invoke('catalog:addSong', songId, tabId),
-
-    move: (id: string, tabId: string): Promise<CatalogState> =>
-      ipcRenderer.invoke('catalog:move', id, tabId),
-    rename: (id: string, title: string): Promise<CatalogAdd> =>
-      ipcRenderer.invoke('catalog:rename', id, title),
-    remove: (id: string): Promise<CatalogState> => ipcRenderer.invoke('catalog:remove', id),
-
-    take: (id: string, folderId: string | null = null): Promise<CatalogTake> =>
-      ipcRenderer.invoke('catalog:take', id, folderId)
+  categories: {
+    list: (): Promise<SongCategory[]> => ipcRenderer.invoke('categories:list'),
+    save: (list: SongCategory[]): Promise<{ categories: SongCategory[]; songs: Song[] }> =>
+      ipcRenderer.invoke('categories:save', list)
   },
 
   folders: {
@@ -366,6 +325,9 @@ const api = {
     command: (command: VoiceCommand): Promise<void> =>
       ipcRenderer.invoke('voice:command', command),
 
+    spell: (tokens: string[]): Promise<Record<string, string[]> | null> =>
+      ipcRenderer.invoke('voice:spell', tokens),
+
     heard: (text: string, final: boolean): Promise<void> =>
       ipcRenderer.invoke('voice:heard', text, final),
     status: (status: VoiceStatus): Promise<void> =>
@@ -388,10 +350,6 @@ const api = {
       ipcRenderer.invoke('live:hideText', value),
     lowerThird: (value: LowerThird | null): Promise<LiveState> =>
       ipcRenderer.invoke('live:lowerThird', value),
-    karaoke: (value: number | null, word: number | null = null): Promise<LiveState> =>
-      ipcRenderer.invoke('live:karaoke', value, word),
-    karaokeLook: (look: KaraokeLook): Promise<LiveState> =>
-      ipcRenderer.invoke('live:karaokeLook', look),
     stage: (patch: Partial<StageInfo>): Promise<LiveState> =>
       ipcRenderer.invoke('live:stage', patch),
     onUpdate: (cb: (state: LiveState) => void): (() => void) => on('live:update', cb)

@@ -2,7 +2,7 @@ import { createModel, type Model, type KaldiRecognizer } from 'vosk-browser'
 
 const RATE = 16_000
 
-const CHUNK = 4096
+const CHUNK = 2048
 
 const LEVEL_EVERY = 200
 
@@ -23,6 +23,7 @@ let sink: GainNode | null = null
 
 let told = 'off'
 let levelAt = 0
+let grammarNow: string | null = null
 
 function say(status: { state: string; error?: string; using?: string }): void {
   if (status.state !== told) log(status.state + (status.error ? `: ${status.error}` : ''))
@@ -43,13 +44,14 @@ async function devices(): Promise<void> {
 }
 
 async function start(deviceId?: string | null, grammar?: string | null): Promise<void> {
+  grammarNow = grammar ?? null
   await stop()
   say({ state: 'loading' })
 
   try {
 
     model ??= await createModel(MODEL_URL)
-    recognizer = makeRecognizer(grammar)
+    recognizer = makeRecognizer(grammarNow)
 
     stream = await navigator.mediaDevices.getUserMedia({
       audio: {
@@ -157,11 +159,11 @@ window.api.voice.onCommand((command) => {
   else if (command.do === 'stop') void stop().then(() => say({ state: 'off' }))
   else if (command.do === 'devices') void devices()
   else if (command.do === 'grammar') {
-
+    grammarNow = command.grammar ?? null
     if (!model || !ctx) return
     try {
       recognizer?.remove()
-      recognizer = makeRecognizer(command.grammar)
+      recognizer = makeRecognizer(grammarNow)
     } catch (error) {
       say({ state: 'error', error: reason(error) })
     }

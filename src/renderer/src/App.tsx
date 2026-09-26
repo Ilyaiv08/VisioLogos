@@ -19,15 +19,9 @@ import { useDecks } from './state/decks'
 import { useScreen } from './state/screen'
 import { pressRemote, useRemote } from './state/remote'
 import { useUndo } from './state/undo'
-import { grammarFor, useVoice, watchKaraokeBackground } from './state/voice'
-import {
-  freshWords,
-  locate,
-  plainLine,
-  songGrid,
-  spotOf,
-  startOfLine
-} from '@shared/karaokeMatch'
+import { useVoice } from './state/voice'
+import { startVoiceFollow } from './state/follow'
+import { onFontsLoaded } from './lib/slideFonts'
 import { useI18n, useT } from './state/i18n'
 import { useUi, type TabId } from './state/ui'
 
@@ -65,9 +59,15 @@ export function App(): React.JSX.Element {
     })
     const offLive = window.api.live.onUpdate((live) => useLive.getState().setLive(live))
 
-    const offKaraoke = watchKaraokeBackground()
-
     const offRemote = window.api.remote.onKey((code) => pressRemote(code))
+
+    const offFollow = startVoiceFollow()
+
+    const offFonts = onFontsLoaded(() => {
+      void useBible.getState().rebuild()
+      useTexts.getState().rebuild()
+      useSongs.getState().rebuild()
+    })
 
     const offLook = useLook.subscribe((now, before) => {
       if (now.byTab === before.byTab) return
@@ -99,8 +99,9 @@ export function App(): React.JSX.Element {
       offCatalog()
       offLive()
       offRemote()
+      offFollow()
+      offFonts()
       offLook()
-      offKaraoke()
       offScreen()
       offLang()
       window.removeEventListener('dragover', swallow)
@@ -109,7 +110,6 @@ export function App(): React.JSX.Element {
   }, [])
 
   useGlobalHotkeys(tab)
-  useVoiceFollow()
 
   return (
     <div className="app">
@@ -146,114 +146,6 @@ export function App(): React.JSX.Element {
       <UndoNotice />
     </div>
   )
-}
-
-const TRUST_HITS = 3
-
-const HOLD = 4
-
-function useVoiceFollow(): void {
-  useEffect(() => {
-    let previous = ''
-    let recent: string[] = []
-    let at = 0
-    let wants = -1
-    let asked = 0
-    let cached: { key: string; grid: ReturnType<typeof songGrid> } | null = null
-
-    const gridNow = (): ReturnType<typeof songGrid> => {
-      const slides = useSongs.getState().slides
-      const key = slides.map((one) => one.slide.id).join('|')
-      if (cached?.key !== key) {
-        cached = {
-          key,
-          grid: songGrid(
-            slides.map((one) => ({ lines: one.slide.blocks.map((b) => plainLine(b.html)) }))
-          )
-        }
-      }
-      return cached.grid
-    }
-
-    const forget = (): void => {
-      previous = ''
-      recent = []
-      wants = -1
-      asked = 0
-    }
-
-    const offSongs = useSongs.subscribe((now, before) => {
-
-      if (now.draft?.id !== before.draft?.id) {
-        at = 0
-        cached = null
-        forget()
-        void useVoice.getState().setGrammar(grammarFor(now.slides))
-        return
-      }
-
-      if (now.index !== before.index) {
-        const grid = gridNow()
-        const line = grid.places.findIndex((place) => place.slide === now.index)
-        if (line >= 0) at = startOfLine(grid, line)
-        forget()
-      }
-    })
-
-    const offHeard = window.api.voice.onHeard(({ text, final }) => {
-      if (!useVoice.getState().on) return
-
-      const grid = gridNow()
-      if (grid.words.length === 0) return
-
-      const fresh = freshWords(previous, text)
-
-      previous = final ? '' : text
-      if (fresh.length === 0) return
-
-      recent = [...recent, ...fresh].slice(-8)
-
-      const found = locate(grid, at, recent)
-      if (found.hits === 0) return
-
-      at = found.at
-      void apply(grid, at, found.hits)
-    })
-
-    async function apply(
-      grid: ReturnType<typeof songGrid>,
-      now: number,
-      hits: number
-    ): Promise<void> {
-      const spot = spotOf(grid, now)
-      const place = grid.places[Math.min(spot.line, grid.places.length - 1)]
-      if (!place) return
-
-      await useLive.getState().startKaraoke()
-      const songs = useSongs.getState()
-
-      if (place.slide !== songs.index) {
-
-        if (place.slide !== wants) {
-          wants = place.slide
-          asked = 1
-          return
-        }
-        asked++
-        if (asked < HOLD || hits < TRUST_HITS || !useVoice.getState().autoTurn) return
-        await songs.goTo(place.slide)
-      }
-
-      wants = -1
-      asked = 0
-      await useLive.getState().karaokeAt(place.at, spot.word)
-    }
-
-    return () => {
-      offSongs()
-      offHeard()
-    }
-  }, [])
 }
 
 function UndoNotice(): React.JSX.Element | null {

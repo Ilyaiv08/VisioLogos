@@ -131,28 +131,3 @@ function splitOversized(block: SlideBlock, fits: FitTest): SlideBlock[] {
   return [block]
 }
 
-export const KARAOKE_LOOK = { color: '#6ec1ff', ms: 350 }
-
-export const KARAOKE_LIGHT = [
-  '#6ec1ff',
-  '#4a9eff',
-  '#5fe3c0',
-  '#7ee787',
-  '#ffe08a',
-  '#ffb15a',
-  '#ff8fb1',
-  '#ffffff'
-]
-
-export const KARAOKE_DARK = [
-  '#1d4ed8',
-  '#0b6e5a',
-  '#14602a',
-  '#8a5a00',
-  '#9a3412',
-  '#9d174d',
-  '#5b21b6',
-  '#111111'
-]
-
-export const KARAOKE_COLORS = [...KARAOKE_LIGHT, ...KARAOKE_DARK]

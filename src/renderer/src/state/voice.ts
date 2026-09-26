@@ -1,11 +1,4 @@
 import { create } from 'zustand'
-import type { KaraokeLook } from '@shared/types'
-import { KARAOKE_COLORS, KARAOKE_LOOK } from '@shared/slide'
-import { bestKaraokeColor, bestKaraokeColors } from '@shared/contrast'
-import { patchesUnderLines, patchUnderText } from '../lib/backLight'
-import { grammarOf, plainLine } from '@shared/karaokeMatch'
-import { useLive } from './live'
-import { useSongs, type SongSlide } from './songs'
 
 export interface VoiceModel {
   installed: boolean
@@ -26,6 +19,13 @@ export interface VoiceStatus {
   devices?: { id: string; label: string }[]
 }
 
+export interface Sung {
+  slide: number
+
+  pass: number
+  times: number
+}
+
 interface VoiceStore {
   model: VoiceModel | null
 
@@ -41,21 +41,16 @@ interface VoiceStore {
   grammar: string | null
   on: boolean
 
-  autoTurn: boolean
+  sung: Sung | null
 
-  autoColor: boolean
+  prepare: (() => Promise<string | null>) | null
 
   init: () => Promise<void>
   install: () => Promise<void>
   installFile: () => Promise<void>
   setDevice: (id: string | null) => void
-  setAutoTurn: (value: boolean) => void
-  listen: (on: boolean, grammar: string | null) => Promise<void>
+  listen: (on: boolean) => Promise<void>
   toggle: () => Promise<void>
-  setLook: (patch: Partial<KaraokeLook>) => Promise<void>
-  setAutoColor: (on: boolean) => Promise<void>
-
-  refitColor: () => Promise<void>
   setGrammar: (grammar: string | null) => Promise<void>
 }
 
@@ -70,8 +65,8 @@ export const useVoice = create<VoiceStore>((set, get) => ({
   heard: '',
   grammar: null,
   on: false,
-  autoTurn: true,
-  autoColor: true,
+  sung: null,
+  prepare: null,
 
   init: async () => {
     const [model, saved] = await Promise.all([
@@ -81,15 +76,8 @@ export const useVoice = create<VoiceStore>((set, get) => ({
 
     set({
       model,
-      deviceId: typeof saved.voiceDevice === 'string' ? saved.voiceDevice : null,
-      autoTurn: saved.voiceAutoTurn !== false,
-      autoColor: saved.karaokeAutoColor !== false
+      deviceId: typeof saved.voiceDevice === 'string' ? saved.voiceDevice : null
     })
-
-    const kept = saved.karaokeLook as Partial<KaraokeLook> | undefined
-    if (kept && (typeof kept.color === 'string' || typeof kept.ms === 'number')) {
-      await useLive.getState().setKaraokeLook({ ...KARAOKE_LOOK, ...kept })
-    }
 
     window.api.voice.onStatus((status) => {
       set({
@@ -99,7 +87,9 @@ export const useVoice = create<VoiceStore>((set, get) => ({
         ...(status.state === 'listening' ? { error: null } : {})
       })
     })
-    window.api.voice.onHeard(({ text }) => set({ heard: text }))
+    window.api.voice.onHeard(({ text }) => {
+      if (text !== get().heard) set({ heard: text })
+    })
     window.api.voice.onInstallStep((step) => set({ step }))
   },
 
@@ -135,99 +125,32 @@ export const useVoice = create<VoiceStore>((set, get) => ({
     }
   },
 
-  setAutoTurn: (value) => {
-    set({ autoTurn: value })
-    void window.api.settings.set('voiceAutoTurn', value)
-  },
-
-  listen: async (on, grammar) => {
-    set({ on, error: null, grammar, heard: '' })
-
-    if (on) {
-      await window.api.voice.command({ do: 'start', deviceId: get().deviceId, grammar })
-    } else {
+  listen: async (on) => {
+    if (!on) {
+      set({ on: false, error: null, heard: '', sung: null })
       await window.api.voice.command({ do: 'stop' })
       set({ status: { state: 'off' } })
-      await useLive.getState().stopKaraoke()
+      return
     }
+
+    set({ on: true, error: null, heard: '' })
+    await window.api.voice.command({
+      do: 'start',
+      deviceId: get().deviceId,
+      grammar: get().grammar
+    })
+
+    const prepare = get().prepare
+    if (prepare && get().on) await prepare()
   },
 
-  toggle: async () => {
-    const on = get().on
-    await get().listen(!on, on ? null : grammarFor(useSongs.getState().slides))
-  },
-
-  setLook: async (patch) => {
-    const now = useLive.getState().live.karaokeLook ?? KARAOKE_LOOK
-    const look = { ...now, ...patch }
-    await useLive.getState().setKaraokeLook(look)
-    void window.api.settings.set('karaokeLook', look)
-
-    if (patch.color !== undefined && get().autoColor) {
-      set({ autoColor: false })
-      void window.api.settings.set('karaokeAutoColor', false)
-    }
-  },
-
-  setAutoColor: async (on) => {
-    set({ autoColor: on })
-    void window.api.settings.set('karaokeAutoColor', on)
-    if (on) await get().refitColor()
-  },
-
-  refitColor: async () => {
-    if (!get().autoColor) return
-
-    const slide = useLive.getState().live.slide
-    if (!slide) return
-
-    const whole = await patchUnderText(slide.background, slide.style)
-    if (!whole) return
-
-    const color = bestKaraokeColor(whole, slide.style.color, KARAOKE_COLORS)
-    if (!color) return
-
-    const bands = await patchesUnderLines(
-      slide.background,
-      slide.style,
-      slide.blocks.length
-    )
-    const colors = bestKaraokeColors(whole, bands, slide.style.color, KARAOKE_COLORS)
-
-    const look = useLive.getState().live.karaokeLook ?? KARAOKE_LOOK
-    if (look.color === color && sameColors(look.colors, colors)) return
-
-    await useLive.getState().setKaraokeLook({ ...look, color, colors })
-  },
+  toggle: () => get().listen(!get().on),
 
   setGrammar: async (grammar) => {
-    set({ grammar, heard: '' })
+    if (grammar === get().grammar) return
+    set({ grammar })
     if (!get().on) return
 
     await window.api.voice.command({ do: 'grammar', grammar })
   }
 }))
-
-export function grammarFor(slides: SongSlide[]): string | null {
-  const lines = slides.flatMap((one) => one.slide.blocks.map((b) => plainLine(b.html)))
-  return lines.length > 0 ? grammarOf(lines) : null
-}
-
-export function watchKaraokeBackground(): () => void {
-  let shown = ''
-
-  return useLive.subscribe((now) => {
-    const slide = now.live.slide
-
-    const key = slide ? JSON.stringify(slide.background) + '|' + slide.blocks.length : ''
-    if (key === shown) return
-
-    shown = key
-    void useVoice.getState().refitColor()
-  })
-}
-
-function sameColors(was: string[] | undefined, now: string[]): boolean {
-  if (!was) return now.length === 0
-  return was.length === now.length && was.every((one, i) => one === now[i])
-}

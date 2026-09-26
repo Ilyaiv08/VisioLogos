@@ -1,18 +1,13 @@
-import { useMemo } from 'react'
 import type { Key } from '@shared/i18n'
-import { KARAOKE_COLORS, KARAOKE_LOOK } from '@shared/slide'
 import { weighUpdate } from '@shared/update'
-import { ColorPicker } from './ColorPicker'
 import { Select } from './Select'
-import { useT } from '../state/i18n'
-import { useLive } from '../state/live'
-import { useSongs } from '../state/songs'
-import { grammarFor, useVoice, type VoiceStep } from '../state/voice'
+import { useT, useTn } from '../state/i18n'
+import { MAX_TIMES, useSongs } from '../state/songs'
+import { useVoice, type VoiceStep } from '../state/voice'
 
-const SLOWEST = 1200
-
-export function VoiceKaraoke(): React.JSX.Element | null {
+export function VoiceFollow(): React.JSX.Element | null {
   const t = useT()
+  const tn = useTn()
   const model = useVoice((s) => s.model)
   const busy = useVoice((s) => s.busy)
   const step = useVoice((s) => s.step)
@@ -21,27 +16,27 @@ export function VoiceKaraoke(): React.JSX.Element | null {
   const devices = useVoice((s) => s.devices)
   const deviceId = useVoice((s) => s.deviceId)
   const on = useVoice((s) => s.on)
-  const autoTurn = useVoice((s) => s.autoTurn)
-  const autoColor = useVoice((s) => s.autoColor)
   const heard = useVoice((s) => s.heard)
+  const sung = useVoice((s) => s.sung)
 
   const slides = useSongs((s) => s.slides)
-  const look = useLive((s) => s.live.karaokeLook) ?? KARAOKE_LOOK
-
-  const grammar = useMemo(() => grammarFor(slides), [slides])
-  const hasSong = slides.length > 0
-  const ready = model?.installed === true
+  const index = useSongs((s) => s.index)
 
   if (!model) return null
 
-  const chosen = devices.find((one) => one.id === deviceId)
+  const hasSong = slides.length > 0
+  const ready = model.installed
+  const times = slides[index]?.times ?? 1
 
+  const chosen = devices.find((one) => one.id === deviceId)
   const overAir = /bluetooth|bt\b/i.test(`${chosen?.label ?? ''} ${status.using ?? ''}`)
+
+  const setTimes = (value: number): void => useSongs.getState().setTimes(index, value)
 
   return (
     <div className="songctl">
       <div className="songctl__head">
-        <span>{t('karaoke.title')}</span>
+        <span>{t('voice.panel')}</span>
         {on && <b>{t(status.state === 'loading' ? 'voice.loading' : 'voice.listening')}</b>}
       </div>
 
@@ -69,25 +64,41 @@ export function VoiceKaraoke(): React.JSX.Element | null {
         </div>
       ) : (
         <>
-          <div className="control__pair">
-            <button
-              className={`chip ${on ? 'is-on' : ''}`}
-              disabled={!hasSong}
-              title={hasSong ? t('voice.hint') : t('voice.needSong')}
-              onClick={() => void useVoice.getState().listen(!on, on ? null : grammar)}
-            >
-              {on ? t('voice.stop') : t('voice.listen')}
-            </button>
+          <button
+            className={`chip voice__listen ${on ? 'is-on' : ''}`}
+            disabled={!hasSong && !on}
+            title={hasSong ? t('voice.hint') : t('voice.needSong')}
+            onClick={() => void useVoice.getState().toggle()}
+          >
+            {on ? t('voice.stop') : t('voice.listen')}
+          </button>
 
-            <label className="voice__turn" title={t('voice.autoTurnHint')}>
-              <input
-                type="checkbox"
-                checked={autoTurn}
-                onChange={(e) => useVoice.getState().setAutoTurn(e.target.checked)}
-              />
-              {t('voice.autoTurn')}
-            </label>
-          </div>
+          {hasSong && (
+            <div className="voice__times" title={t('voice.timesHint')}>
+              <span>{t('voice.times')}</span>
+              <button
+                className="icon-btn"
+                aria-label={t('voice.fewer')}
+                disabled={times <= 1}
+                onClick={() => setTimes(times - 1)}
+              >
+                −
+              </button>
+              <b>{tn('n.times', times)}</b>
+              <button
+                className="icon-btn"
+                aria-label={t('voice.more')}
+                disabled={times >= MAX_TIMES}
+                onClick={() => setTimes(times + 1)}
+              >
+                +
+              </button>
+            </div>
+          )}
+
+          {on && sung && sung.slide === index && sung.times > 1 && (
+            <p className="voice__step">{t('voice.pass', { n: sung.pass + 1, of: sung.times })}</p>
+          )}
 
           <div className="voice__device">
             <span>{t('voice.device')}</span>
@@ -114,43 +125,6 @@ export function VoiceKaraoke(): React.JSX.Element | null {
               {heard && <p className="voice__heard">{t('voice.heard', { text: heard })}</p>}
             </>
           )}
-
-          <div className="field">
-            {t('karaoke.color')}
-            <ColorPicker
-              value={look.color}
-              presets={KARAOKE_COLORS}
-              autoOn={autoColor}
-              onChange={(hex) => void useVoice.getState().setLook({ color: hex })}
-              onPickForBackground={() => void useVoice.getState().setAutoColor(true)}
-            />
-          </div>
-
-          {autoColor && (
-            <p className="voice__step">
-              {(look.colors?.length ? look.colors : [look.color]).map((color, at) => (
-                <span className="voice__chosen" key={at} style={{ background: color }} />
-              ))}
-              {t(look.colors && look.colors.length > 1 ? 'karaoke.autoLines' : 'karaoke.autoNow')}
-            </p>
-          )}
-
-          <label className="voice__smooth">
-            <span className="voice__label">{t('karaoke.smooth')}</span>
-            <input
-              type="range"
-              min={0}
-              max={SLOWEST}
-              step={50}
-              value={look.ms}
-              onChange={(e) => void useVoice.getState().setLook({ ms: Number(e.target.value) })}
-            />
-            <b>
-              {look.ms === 0
-                ? t('karaoke.atOnce')
-                : t('karaoke.seconds', { n: (look.ms / 1000).toFixed(2).replace('.', ',') })}
-            </b>
-          </label>
         </>
       )}
 
@@ -169,7 +143,6 @@ function stepWord(
   t: (key: Key, params?: Record<string, string | number>) => string
 ): string {
   if (step.stage === 'download') {
-
     const done = step.total
       ? `${weighUpdate(step.got ?? 0)} / ${weighUpdate(step.total)}`
       : weighUpdate(step.got ?? 0)

@@ -1,5 +1,13 @@
 import { create } from 'zustand'
-import type { Slide, SlideStyle, Song, SongPart, SongPartKind } from '@shared/types'
+import type {
+  Slide,
+  SlideStyle,
+  Song,
+  SongCategory,
+  SongPart,
+  SongPartKind
+} from '@shared/types'
+import { freeCategoryName, movedCategory, placedCategory } from '@shared/categories'
 import {
   defaultOrder,
   emptySong,
@@ -26,7 +34,15 @@ export interface SongSlide {
   partId: string
 
   indexInPart: number
+
+  position: number
+
+  key: string
+
+  times: number
 }
+
+export const MAX_TIMES = 9
 
 export interface ImportReport {
   added: number
@@ -36,10 +52,16 @@ export interface ImportReport {
   ids: string[]
   formats: Record<string, number>
   skipped: { file: string; reason: string }[]
+
+  duplicates: string[]
 }
 
 interface SongsStore {
   items: Song[]
+
+  categories: SongCategory[]
+
+  categoryId: string | null
   draft: Song | null
   dirty: boolean
   query: string
@@ -49,6 +71,18 @@ interface SongsStore {
 
   init: () => Promise<void>
   setQuery: (q: string) => void
+
+  pickCategory: (id: string | null) => void
+
+  addCategory: () => Promise<string | null>
+  renameCategory: (id: string, name: string) => Promise<void>
+  moveCategory: (id: string, delta: number) => Promise<void>
+
+  placeCategory: (id: string, targetId: string) => Promise<void>
+
+  removeCategory: (id: string) => Promise<void>
+
+  setCategory: (ids: string[], categoryId: string | null) => Promise<void>
   create: () => void
   open: (id: string) => void
 
@@ -62,7 +96,11 @@ interface SongsStore {
   closeDraft: () => void
   importFiles: () => Promise<ImportReport>
 
-  addFiles: (files: string[], folderId?: string | null) => Promise<ImportReport>
+  addFiles: (
+    files: string[],
+    folderId?: string | null,
+    categoryId?: string | null
+  ) => Promise<ImportReport>
   exportSong: (format: SongFormat, songId: string) => Promise<string | null>
 
   reorder: (ids: string[]) => Promise<void>
@@ -85,6 +123,8 @@ interface SongsStore {
   rebuild: () => void
   goTo: (index: number) => Promise<void>
   goToPart: (partId: string) => Promise<void>
+
+  setTimes: (index: number, times: number) => void
   step: (delta: number) => Promise<void>
   show: () => Promise<void>
 
@@ -93,18 +133,152 @@ interface SongsStore {
 
 export const useSongs = create<SongsStore>((set, get) => ({
   items: [],
+  categories: [],
+  categoryId: null,
   draft: null,
   dirty: false,
   query: '',
   slides: [],
   index: 0,
 
-  init: async () => set({ items: await window.api.songs.list() }),
+  init: async () => {
+    const [items, categories, saved] = await Promise.all([
+      window.api.songs.list(),
+      window.api.categories.list(),
+      window.api.settings.all()
+    ])
+    const kept = typeof saved.songCategory === 'string' ? saved.songCategory : null
+    set({
+      items,
+      categories,
+      categoryId: categories.some((one) => one.id === kept) ? kept : null
+    })
+  },
 
   setQuery: (query) => set({ query }),
 
+  pickCategory: (categoryId) => {
+    if (categoryId !== null && !get().categories.some((one) => one.id === categoryId)) return
+    set({ categoryId })
+    void window.api.settings.set('songCategory', categoryId)
+  },
+
+  addCategory: async () => {
+    const was = get().categories
+    const made: SongCategory = {
+      id: `cat-${Date.now()}`,
+      name: freeCategoryName(was, t('cats.new'))
+    }
+    const next = [...was, made]
+
+    await putCategories(next)
+    remember({
+      label: t('undo.category'),
+      undo: () => putCategories(was),
+      redo: () => putCategories(next)
+    })
+
+    return made.id
+  },
+
+  renameCategory: async (id, name) => {
+    const was = get().categories
+    const clean = name.trim()
+    if (!clean || !was.some((one) => one.id === id && one.name !== clean)) return
+
+    const next = was.map((one) => (one.id === id ? { ...one, name: clean } : one))
+    await putCategories(next)
+    remember({
+      label: t('undo.category'),
+      merge: `category-name-${id}`,
+      undo: () => putCategories(was),
+      redo: () => putCategories(next)
+    })
+  },
+
+  moveCategory: async (id, delta) => {
+    const was = get().categories
+    const next = movedCategory(was, id, delta)
+    if (next === was) return
+
+    await putCategories(next)
+    remember({
+      label: t('undo.category'),
+      undo: () => putCategories(was),
+      redo: () => putCategories(next)
+    })
+  },
+
+  placeCategory: async (id, targetId) => {
+    const was = get().categories
+    const next = placedCategory(was, id, targetId)
+    if (next === was) return
+
+    await putCategories(next)
+    remember({
+      label: t('undo.category'),
+      undo: () => putCategories(was),
+      redo: () => putCategories(next)
+    })
+  },
+
+  removeCategory: async (id) => {
+    const was = get().categories
+    const gone = was.find((one) => one.id === id)
+    if (!gone) return
+
+    const members = get()
+      .items.filter((song) => song.categoryId === id)
+      .map((song) => song.id)
+    const next = was.filter((one) => one.id !== id)
+
+    const drop = async (): Promise<void> => {
+      await putCategories(next)
+      followDraft(members, null)
+    }
+
+    await drop()
+    remember({
+      label: t('undo.categoryRemove', { name: gone.name }),
+      undo: async () => {
+        await putCategories(was)
+        set({ items: await window.api.songs.setCategory(members, id) })
+        followDraft(members, id)
+      },
+      redo: drop
+    })
+  },
+
+  setCategory: async (ids, categoryId) => {
+    const moving = get().items.filter(
+      (song) => ids.includes(song.id) && (song.categoryId ?? null) !== categoryId
+    )
+    if (moving.length === 0) return
+
+    const put = async (to: string | null, which: string[]): Promise<void> => {
+      set({ items: await window.api.songs.setCategory(which, to) })
+      followDraft(which, to)
+    }
+
+    const back = new Map<string | null, string[]>()
+    for (const song of moving) {
+      const was = song.categoryId ?? null
+      back.set(was, [...(back.get(was) ?? []), song.id])
+    }
+    const all = moving.map((song) => song.id)
+
+    await put(categoryId, all)
+    remember({
+      label: t('undo.songCategory'),
+      undo: async () => {
+        for (const [was, which] of back) await put(was, which)
+      },
+      redo: () => put(categoryId, all)
+    })
+  },
+
   create: () => {
-    set({ draft: emptySong(), dirty: false, index: 0 })
+    set({ draft: { ...emptySong(), categoryId: get().categoryId }, dirty: false, index: 0 })
     get().rebuild()
   },
 
@@ -232,14 +406,18 @@ export const useSongs = create<SongsStore>((set, get) => ({
   closeDraft: () => set({ draft: null, dirty: false, slides: [], index: 0 }),
 
   importFiles: async () => {
-    const result = await window.api.songs.import()
+    const result = await window.api.songs.import(get().categoryId)
     set({ items: result.songs })
     afterImport(result.ids, result.backgrounds)
     return report(result)
   },
 
-  addFiles: async (files, folderId = null) => {
-    const result = await window.api.songs.add(files, folderId)
+  addFiles: async (files, folderId = null, categoryId) => {
+    const result = await window.api.songs.add(
+      files,
+      folderId,
+      categoryId === undefined ? get().categoryId : categoryId
+    )
     set({ items: result.songs })
     afterImport(result.ids, result.backgrounds)
     return report(result)
@@ -379,6 +557,21 @@ export const useSongs = create<SongsStore>((set, get) => ({
     if (at >= 0) await get().goTo(at)
   },
 
+  setTimes: (index, times) => {
+    const draft = get().draft
+    const slide = get().slides[index]
+    if (!draft || !slide) return
+
+    const count = Math.min(MAX_TIMES, Math.max(1, Math.round(times)))
+    if (count === slide.times) return
+
+    const repeats = { ...(draft.repeats ?? {}) }
+    if (count === 1) delete repeats[slide.key]
+    else repeats[slide.key] = count
+
+    get().edit({ repeats }, { label: t('undo.times'), merge: `song-times-${draft.id}-${slide.key}` })
+  },
+
   step: (delta) => get().goTo(get().index + delta),
 
   advance: async () => {
@@ -407,18 +600,53 @@ function showDraft(song: Song): void {
   if (useUi.getState().tab !== 'songs') useUi.getState().goEdit('songs')
 }
 
+async function putCategories(list: SongCategory[]): Promise<void> {
+  const { categories, songs } = await window.api.categories.save(list)
+  const picked = useSongs.getState().categoryId
+  useSongs.setState({
+    categories,
+    items: songs,
+    categoryId: picked && categories.some((one) => one.id === picked) ? picked : null
+  })
+
+  const draft = useSongs.getState().draft
+  if (draft?.categoryId && !categories.some((one) => one.id === draft.categoryId)) {
+    useSongs.setState({ draft: { ...draft, categoryId: null } })
+  }
+}
+
+function followDraft(ids: string[], categoryId: string | null): void {
+  const draft = useSongs.getState().draft
+  if (draft && ids.includes(draft.id)) {
+    useSongs.setState({ draft: { ...draft, categoryId } })
+  }
+}
+
+export function backgroundNotice(bg: { added: number; existed: number }): string | null {
+  const parts: string[] = []
+  if (bg.added === 1) parts.push(t('bg.keptOne'))
+  else if (bg.added > 1) parts.push(t('bg.keptMany', { n: bg.added }))
+
+  if (bg.existed === 1) parts.push(t('bg.alreadyOne'))
+  else if (bg.existed > 1) parts.push(t('bg.alreadyMany', { n: bg.existed }))
+
+  return parts.length > 0 ? parts.join('. ') : null
+}
+
 const report = (result: {
   added: number
   backgrounds: { added: number; existed: number }
   ids: string[]
   formats: Record<string, number>
   skipped: { file: string; reason: string }[]
+  duplicates: string[]
 }): ImportReport => ({
   added: result.added,
   backgrounds: result.backgrounds,
   ids: result.ids,
   formats: result.formats,
-  skipped: result.skipped
+  skipped: result.skipped,
+  duplicates: result.duplicates
 })
 
 function afterImport(ids: string[], backgrounds: { added: number }): void {
@@ -473,15 +701,23 @@ function buildSongSlides(
   const out: SongSlide[] = []
 
   const order = song.order.length ? song.order : song.parts.map((p) => p.id)
+  const seen = new Map<string, number>()
 
   order.forEach((partId, position) => {
     const part = byId.get(partId)
     if (!part || !part.text.trim()) return
 
+    const occurrence = seen.get(partId) ?? 0
+    seen.set(partId, occurrence + 1)
+
     for (const [i, chunk] of splitPart(part.text, fits).entries()) {
+      const key = `${partId}#${occurrence}#${i}`
       out.push({
         partId,
         indexInPart: i,
+        position,
+        key,
+        times: Math.min(MAX_TIMES, Math.max(1, Math.round(song.repeats?.[key] ?? 1))),
         slide: {
           id: `song-${song.id}-${position}-${i}`,
           kind: 'song',

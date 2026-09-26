@@ -10,6 +10,26 @@ export interface Release {
 
 export const HISTORY: Release[] = [
   {
+    version: '1.0.0',
+    date: '2026-09-26',
+    ru: [
+      'Слайды листаются по голосу: следующий включается, когда начинают петь последнее слово текущего. Закраска слов убрана.',
+      'У слайда можно задать, сколько раз его поют подряд, — переход будет только после последнего раза.',
+      'Распознавание понимает слова с «ё» и без неё и не теряет их; начинает слушать вдвое быстрее.',
+      'Каталог слился с библиотекой: категории стоят списком под поиском, щелчок открывает категорию, «Назад» возвращает к списку.',
+      'Импорт берёт номер и название из имени файла, поэтому порядок песен совпадает с папкой, а старый .ppt разбирается так же, как .pptx.',
+      'Текст на проекторе раскладывается так же, как в окне программы, при любом шрифте и масштабе экрана.'
+    ],
+    en: [
+      'Slides turn by voice: the next one comes up as the last word of the current one begins. Word colouring is gone.',
+      'A slide can be set to be sung several times in a row — it turns only after the last time.',
+      'Recognition understands words with and without “ё” and no longer loses them; it starts listening twice as fast.',
+      'The catalogue merged into the library: categories stand in a list under the search, a click opens a category, “Back” returns to the list.',
+      'Import takes the number and the title from the file name, so the order of songs matches the folder, and an old .ppt is read the same way as .pptx.',
+      'Text on the projector is laid out exactly as in the program window, with any font and any screen scaling.'
+    ]
+  },
+  {
     version: '0.4.2',
     date: '2026-09-18',
     ru: [

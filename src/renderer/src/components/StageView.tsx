@@ -14,9 +14,6 @@ export function StageView({ live }: { live: LiveState | null }): React.JSX.Eleme
         <SlideView
           slide={live?.slide ?? null}
           lowerThird={live?.lowerThird ?? null}
-          karaoke={live?.karaoke ?? null}
-          karaokeWord={live?.karaokeWord ?? null}
-          karaokeLook={live?.karaokeLook ?? null}
           blackout={live?.blackout ?? false}
           hideText={live?.hideText ?? false}
         />

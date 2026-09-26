@@ -1,5 +1,6 @@
 import type { SlideBlock, SlideStyle } from '@shared/types'
 import { DEFAULT_ASPECT, type FitTest } from '@shared/slide'
+import { pixelRatio } from './slideFonts'
 
 const REF_WIDTH = 1920
 
@@ -37,8 +38,9 @@ export function domFitTest({
   aspect = DEFAULT_ASPECT,
   secondaryFor
 }: FitOptions): FitTest {
-  const boxW = REF_WIDTH
-  const boxH = REF_WIDTH / aspect
+  const unit = 1 / pixelRatio()
+  const boxW = REF_WIDTH * unit
+  const boxH = (REF_WIDTH / aspect) * unit
 
   const pad = (style.paddingPct / 100) * boxW
   const refPx = (boxH * style.fontSizeVh * style.referenceScale) / 100

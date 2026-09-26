@@ -435,9 +435,6 @@ export function HomeTab(): React.JSX.Element {
                   <SlideView
                     slide={live.slide}
                     lowerThird={live.lowerThird}
-                    karaoke={live.karaoke}
-                    karaokeWord={live.karaokeWord}
-                    karaokeLook={live.karaokeLook}
                     blackout={live.blackout}
                     hideText={live.hideText}
                     aspect={shot}
